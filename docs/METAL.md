@@ -75,6 +75,10 @@ RoPEのcos/sin表は、CPUと同じFP32の角度形成・倍精度の範囲縮�
 
 Metalが確保した`StorageModeShared`のバッファへ、元BF16を8 MiB以下の`pread`で直接読み込みます。CPUの匿名重みキャッシュとGPU重みの二重コピーを作りません。活性値の入力・出力バッファも再利用します。
 
+`PLAMO_METAL_TEXTURE_WEIGHTS=1`は、`--memory auto`の検証対象モデルの重みを読み取り専用の整数テクスチャへ転送する実験用設定です。BF16の符号ビットを可逆に並べ替え、読み出し時に元の全16ビットを復元してFP32で計算します。転送用の共有コピーは解放します。モデル全体がGPUの推奨予算に収まることを起動時に確認し、以降は重みの保持量を固定します。`compute.weight_storage`は`texture-bf16`になります。
+
+`PLAMO_METAL_TEXTURE_HEAP=1`を併用すると、デバイスの確保上限内の単一Heapへテクスチャをまとめます。収まらない分は個別に確保し、実際に使われたHeapの確保量を`compute.weight_heap_bytes`に表示します。`PLAMO_METAL_PRIVATE_WEIGHTS=1`は、保持する通常・圧縮・補助Q4バッファをGPU専用領域へ置く別の実験用設定です。`stream`には適用せず、元の重みと演算精度を保ちます。`compute.private_weight_bytes`は、テクスチャを含むGPU専用領域の保持量を元BF16換算で示します。これらの設定は既定では無効です。
+
 既定の`PLAMO_WEIGHT_STORAGE=auto`は、準備済みの無損失ファイルがある場合、または計算用の元BF16行列がキャッシュ上限に収まらない場合に無損失圧縮を選びます。512値ごとの符号・仮数と指数差をビット列に保存し、行列演算のロード時に全16ビットを復元します。圧縮が有利な1 MiB以上の保持ブロックが対象です。保持領域を節約して、生成中のファイル読み込みを減らします。準備済みファイルがなく、上限に収まるモデルは通常のBF16キャッシュを使います。
 
 `PLAMO_WEIGHT_STORAGE=raw`で通常形式、`lossless`で圧縮形式を明示できます。CPUと`--memory stream`には適用しません。`memory.cached_weight_bytes`は元BF16換算、`cached_storage_bytes`はページ境界の余白を含む保持領域です。後者と`staging_bytes`の合計を`budget_bytes`以下に制限します。`compute.weight_storage`と`packed_weight_bytes`で形式と、圧縮して保持している元のデータ量を確認できます。圧縮後の必要量を記録し、メモリ圧で解放されたブロックが収まらなければ再読み込み・再解析を省きます。

@@ -129,7 +129,7 @@ static void reset(struct fixture *f) {
         f->cache[i].count = 0; f->rotation[i].processed_count = 0; f->rotation[i].scale_bits = 0;
     }
 }
-static void prefills(struct plamo_metal *metal, struct fixture *a, struct fixture *b) {
+static void prefills(struct plamo_metal *metal, struct fixture *a, struct fixture *b, int fixed) {
     const size_t counts[] = {1, 2, 3, 4, 7, 8, 9, 17, 33, 129, 4096};
     const size_t prefixes[] = {0, 2, 6};
     size_t h = a->model.hidden;
@@ -159,8 +159,10 @@ static void prefills(struct plamo_metal *metal, struct fixture *a, struct fixtur
     uint32_t ids[] = {2, 5, 9};
     float *actual = calloc(3 * h, 4), *expected = calloc(3 * h, 4); CHECK(actual && expected);
     available_bytes = 1; plamo_metal_maintain(metal);
-    CHECK(plamo_metal_prefill(metal, &a->model, ids, 3, actual) == 0); compare(a, b);
-    for (size_t j = 0; j < 3 * h; ++j) CHECK(actual[j] == 0);
+    if (!fixed) {
+        CHECK(plamo_metal_prefill(metal, &a->model, ids, 3, actual) == 0); compare(a, b);
+        for (size_t j = 0; j < 3 * h; ++j) CHECK(actual[j] == 0);
+    }
     CHECK(plamo_prefill(&a->model, ids, 3, actual)); CHECK(cpu_prefill(&b->model, ids, 3, expected));
     equal_floats(actual, expected, 3 * h, "prefill pressure fallback"); compare(a, b);
     available_bytes = UINT64_C(128) * 1024 * 1024; plamo_metal_maintain(metal); preload(metal, &a->model);
@@ -205,7 +207,7 @@ static void verification(struct plamo_metal *metal, struct fixture *a, struct fi
     free(states); free(logits); free(initial); reset(a); reset(b);
     puts("Metal verification: PASS (1..16 FP32 candidates, unchanged canonical state before commit, sequential-prefix commit, sliding KV, rejected suffix, ordinary-decode recovery)");
 }
-static int run(size_t h, size_t n, size_t dim, size_t capacity, int require_gpu) {
+static int run(size_t h, size_t n, size_t dim, size_t capacity, int require_gpu, int textures) {
     size_t qh = 4, kh = 2, words = 35 * h + 2 * (4 * h + (qh + 2 * kh) * dim * h + 2 * dim + h * qh * dim + 3 * h * n);
     uint16_t *data = malloc(words * 2); CHECK(data);
     uint32_t seed = 93;
@@ -216,7 +218,24 @@ static int run(size_t h, size_t n, size_t dim, size_t capacity, int require_gpu)
     struct plamo_mapping map = {base, words * 2};
     struct plamo_metal_config config = {.memory = PLAMO_METAL_AUTO, .maps = &map, .fds = &fd, .count = 1,
         .packing = n > 1000 ? PLAMO_PACK_LOSSLESS : PLAMO_PACK_RAW, .reserve = 64 * 1024 * 1024, .available = available};
+    void *slots[9]; uint64_t shapes[9][2]; struct plamo_weight_spec schema[10] = {0};
+    if (textures) {
+        for (unsigned i = 0; i < 2; ++i) {
+            const struct qkv *q = a.mixer[i].qkv; const struct mlp *p = a.layer[i].mlp;
+            const uint16_t *matrices[] = {q->weight, a.mixer[i].weight, p->gu, p->down};
+            const uint64_t rows[] = {(q->qh + 2 * q->kh) * q->dim, h, 2 * n, h};
+            const uint64_t cols[] = {h, q->qh * q->dim, h, n};
+            for (unsigned j = 0; j < 4; ++j) {
+                unsigned k = i * 4 + j; slots[k] = (void *)matrices[j]; shapes[k][0] = rows[j]; shapes[k][1] = cols[j];
+                schema[k] = (struct plamo_weight_spec){"texture", 2, shapes[k], &slots[k]};
+            }
+        }
+        slots[8] = (void *)a.model.head; shapes[8][0] = a.model.vocab; shapes[8][1] = h;
+        schema[8] = (struct plamo_weight_spec){"head", 2, shapes[8], &slots[8]}; config.schema = schema;
+    }
+    if (textures) CHECK(!setenv("PLAMO_METAL_TEXTURE_WEIGHTS", "1", 1));
     char error[1024]; struct plamo_metal *metal = plamo_metal_open(&config, error, sizeof error);
+    if (textures) CHECK(!unsetenv("PLAMO_METAL_TEXTURE_WEIGHTS"));
     if (!metal) {
         int skip = !require_gpu && !strcmp(error, "Metal requires an available Apple Silicon GPU");
         fprintf(stderr, "Decode tests %s: %s\n", skip ? "SKIPPED" : "FAILED", error); return skip ? 77 : 1;
@@ -229,10 +248,11 @@ static int run(size_t h, size_t n, size_t dim, size_t capacity, int require_gpu)
     for (size_t j = 0; j < 3 * h; ++j) CHECK(untouched[j] == 0);
     free(untouched);
     preload(metal, &a.model); CHECK(plamo_metal_prepare_model(metal, &a.model));
-    prefills(metal, &a, &b);
+    prefills(metal, &a, &b, textures);
     verification(metal, &a, &b);
     struct plamo_metal_info initial; plamo_metal_get_info(metal, &initial);
-    CHECK((initial.packed_weight_bytes != 0) == (n > 1000));
+    CHECK((initial.packed_weight_bytes != 0) == (textures || n > 1000));
+    if (textures) CHECK(!strcmp(initial.weight_storage, "texture-bf16"));
     for (size_t step = 0; step < capacity && step < 140; ++step) {
         if (step == 9) {
             // CPU batch writes directly into the GPU-visible canonical KV.
@@ -252,7 +272,7 @@ static int run(size_t h, size_t n, size_t dim, size_t capacity, int require_gpu)
         CHECK(plamo_forward(&a.model, (step * 7 + 2) % 17)); plamo_metal_get_info(metal, &after);
         CHECK(after.command_buffers == before.command_buffers + 1 && after.fused_decodes == before.fused_decodes + 1);
         CHECK(!after.errors && !after.cpu_fallbacks); compare(&a, &b);
-        if (step == 27) {
+        if (step == 27 && !textures) {
             available_bytes = 1; plamo_metal_maintain(metal);
             CHECK(plamo_metal_forward(metal, &a.model, 3) == 0); compare(&a, &b);
             // The ordinary assembly path can resume from GPU-produced KV.
@@ -416,9 +436,11 @@ static void mapped_graph(void) {
 }
 int main(int argc, char **argv) {
     int require = argc == 2 && !strcmp(argv[1], "--require-gpu");
-    int result = run(7, 11, 6, 4100, require); if (result) return result == 77 ? 0 : result;
-    result = run(128, 257, 128, 19, require); if (result) return result == 77 ? 0 : result;
-    result = run(128, 4097, 128, 19, require); if (result) return result == 77 ? 0 : result;
+    int result = run(7, 11, 6, 4100, require, 0); if (result) return result == 77 ? 0 : result;
+    result = run(128, 257, 128, 19, require, 0); if (result) return result == 77 ? 0 : result;
+    result = run(128, 4097, 128, 19, require, 0); if (result) return result == 77 ? 0 : result;
+    result = run(7, 11, 6, 4100, require, 1); if (result) return result == 77 ? 0 : result;
+    result = run(128, 257, 128, 19, require, 1); if (result) return result == 77 ? 0 : result;
     mapped_graph();
     puts("Metal decode/prefill: PASS (single command, full CPU reference, all prompt states/logits/KV, sliding batches, existing prefixes, odd widths, growth past 128 rows, stale rotations, request reset, pressure fallback/recovery)");
     return 0;

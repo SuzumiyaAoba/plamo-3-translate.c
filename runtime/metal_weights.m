@@ -53,8 +53,9 @@ void plamo_metal_maintain(struct plamo_metal *m) {
         m->used -= e->allocated;
         m->info.cache.cached_bytes -= e->bytes;
         if (e->packed) m->info.packed_weight_bytes -= e->bytes;
-        plamo_metal_residency_remove(m, e->buffer);
-        [e->buffer release];
+        if (e->resource.storageMode == MTLStorageModePrivate) m->info.private_weight_bytes -= e->bytes;
+        plamo_metal_residency_remove(m, e->resource);
+        [e->resource release];
     }
     // Release evicted pages immediately, including while no GPU work is queued.
     if (m->entries != previous_entries) plamo_metal_residency_commit(m);
@@ -76,20 +77,22 @@ static int file_range(struct plamo_metal *m, uintptr_t address, uint64_t bytes, 
 
 static id<MTLBuffer> pack_cache(struct plamo_metal *, uint64_t, uint64_t, unsigned *, uint64_t *);
 static id<MTLBuffer> quantize_cache(struct plamo_metal *, uint64_t, uint64_t);
+static id<MTLBuffer> private_copy(struct plamo_metal *, id<MTLBuffer>, uint64_t, uint64_t);
 
 static void retain_weights(struct plamo_metal *m, uintptr_t address, uint64_t bytes, uint64_t allocation,
-                           id<MTLBuffer> buffer, unsigned prepared, unsigned packed) {
+                           id<MTLResource> resource, unsigned prepared, unsigned packed) {
     // Growing the private cache can supersede previously borrowed ranges.
     if (m->mapped_count) plamo_metal_release_mappings(m);
-    m->table[m->entries++] = (struct entry){address, bytes, allocation, buffer, prepared, packed};
+    m->table[m->entries++] = (struct entry){address, bytes, allocation, resource, prepared, packed};
     m->used += allocation;
     m->info.cache.cached_bytes += bytes;
     if (packed) m->info.packed_weight_bytes += bytes;
+    if (resource.storageMode == MTLStorageModePrivate) m->info.private_weight_bytes += bytes;
     // Newly encoded packed buffers were registered by pack_cache already.
-    if (!prepared) plamo_metal_residency_add(m, buffer);
+    if (!prepared) plamo_metal_residency_add(m, resource);
 }
 
-id<MTLBuffer> plamo_metal_weights(struct plamo_metal *m, const void *source, uint64_t bytes, NSUInteger *buffer_offset,
+id<MTLResource> plamo_metal_weights(struct plamo_metal *m, const void *source, uint64_t bytes, NSUInteger *buffer_offset,
                               int retain_only, unsigned *packed, int decode) {
     uintptr_t address = (uintptr_t)source;
     *buffer_offset = 0;
@@ -103,7 +106,7 @@ id<MTLBuffer> plamo_metal_weights(struct plamo_metal *m, const void *source, uin
             m->info.cache.hit_bytes += bytes;
             *buffer_offset = (NSUInteger)(address - e->source);
             *packed = e->packed;
-            return e->buffer;
+            return e->resource;
         }
     }
     if (bytes > m->staging_bytes) return nil;
@@ -139,7 +142,12 @@ id<MTLBuffer> plamo_metal_weights(struct plamo_metal *m, const void *source, uin
             int loaded = cached && plamo_disk_cache_read(m->disk_cache, data, cached.contents, stored, plamo_io_stats);
             if (loaded) {
                 *packed = m->use_packing;
-                if (keep) retain_weights(m, address, bytes, stored, cached, 0, *packed);
+                unsigned prepared = 0;
+                if (keep && m->private_weights) {
+                    id<MTLBuffer> gpu = private_copy(m, cached, stored, stored);
+                    if (gpu) { [cached release]; cached = gpu; prepared = 1; }
+                }
+                if (keep) retain_weights(m, address, bytes, stored, cached, prepared, *packed);
                 ++m->info.cache.misses;
                 ++m->info.disk_cache_hits;
                 m->info.disk_cache_weight_bytes += bytes;
@@ -214,13 +222,44 @@ id<MTLBuffer> plamo_metal_weights(struct plamo_metal *m, const void *source, uin
         allocation = required;
         retain = 1;
     }
-    if (retain) {
-        retain_weights(m, address, bytes, allocation, buffer, *packed, *packed);
+    if (retain && !*packed && m->texture_weights) {
+        uint64_t texture_bytes = 0;
+        id<MTLTexture> texture = plamo_metal_texture(m, source, buffer, bytes, remaining, &texture_bytes);
+        if (texture) {
+            [buffer release]; *packed = 3;
+            retain_weights(m, address, bytes, texture_bytes, texture, 1, 3);
+            return texture;
+        }
     }
+    if (retain && !*packed && m->private_weights) {
+        id<MTLBuffer> gpu = private_copy(m, buffer, bytes, allocation);
+        if (gpu) {
+            [buffer release];
+            retain_weights(m, address, bytes, allocation, gpu, 1, 0);
+            return gpu;
+        }
+    }
+    if (retain) retain_weights(m, address, bytes, allocation, buffer, *packed, *packed);
     return buffer;
 }
 
-static int prepare_buffer(struct plamo_metal *, id<MTLBuffer>);
+static int prepare_buffer(struct plamo_metal *, id<MTLResource>);
+
+static id<MTLBuffer> private_copy(struct plamo_metal *m, id<MTLBuffer> source, uint64_t bytes, uint64_t allocation) {
+    id<MTLBuffer> gpu = [m->device newBufferWithLength:allocation options:MTLResourceStorageModePrivate];
+    if (!gpu) return nil;
+    id<MTLCommandBuffer> command = [m->queue commandBuffer];
+    id<MTLBlitCommandEncoder> encoder = [command blitCommandEncoder];
+    if (!command || !encoder) {
+        [gpu release]; plamo_metal_problem(m, "cannot create private weight transfer"); return nil;
+    }
+    plamo_metal_residency_add(m, gpu);
+    [encoder copyFromBuffer:source sourceOffset:0 toBuffer:gpu destinationOffset:0 size:bytes];
+    [encoder endEncoding];
+    if (plamo_metal_complete(m, command, nil)) return gpu;
+    plamo_metal_residency_remove(m, gpu); plamo_metal_residency_commit(m); [gpu release];
+    return nil;
+}
 
 int plamo_metal_preload(struct plamo_metal *m, const void *source, uint64_t bytes) {
     if (m->raw_mappings) return 1;
@@ -229,7 +268,7 @@ int plamo_metal_preload(struct plamo_metal *m, const void *source, uint64_t byte
         uint64_t errors = m->info.errors;
         NSUInteger offset;
         unsigned packed;
-        id<MTLBuffer> buffer = plamo_metal_weights(m, source, bytes, &offset, 1, &packed, 0);
+        id<MTLResource> buffer = plamo_metal_weights(m, source, bytes, &offset, 1, &packed, 0);
         return errors == m->info.errors && (!buffer || prepare_buffer(m, buffer));
     }
 }
@@ -257,7 +296,8 @@ static id<MTLBuffer> pack_cache(struct plamo_metal *m, uint64_t bytes, uint64_t 
     *packed = use;
     *allocated = plamo_metal_aligned(use ? length : bytes);
     if (*allocated > remaining) return nil;
-    id<MTLBuffer> buffer = [m->device newBufferWithLength:(NSUInteger)*allocated options:MTLResourceStorageModeShared];
+    id<MTLBuffer> buffer = [m->device newBufferWithLength:(NSUInteger)*allocated
+        options:m->private_weights && use ? MTLResourceStorageModePrivate : MTLResourceStorageModeShared];
     if (!buffer) return nil;
     if (!use) { memcpy(buffer.contents, m->staging.contents, (size_t)bytes); return buffer; }
     plamo_metal_residency_add(m, buffer);
@@ -281,7 +321,8 @@ static id<MTLBuffer> pack_cache(struct plamo_metal *m, uint64_t bytes, uint64_t 
 }
 
 static id<MTLBuffer> quantize_cache(struct plamo_metal *m, uint64_t bytes, uint64_t allocation) {
-    id<MTLBuffer> buffer = [m->device newBufferWithLength:(NSUInteger)allocation options:MTLResourceStorageModeShared];
+    id<MTLBuffer> buffer = [m->device newBufferWithLength:(NSUInteger)allocation
+        options:m->private_weights ? MTLResourceStorageModePrivate : MTLResourceStorageModeShared];
     if (!buffer) return nil;
     plamo_metal_residency_add(m, buffer);
     id<MTLCommandBuffer> command = [m->queue commandBuffer];
@@ -298,11 +339,11 @@ fail:
     plamo_metal_residency_remove(m, buffer); plamo_metal_residency_commit(m); [buffer release]; return nil;
 }
 
-static int prepare_buffer(struct plamo_metal *m, id<MTLBuffer> buffer) {
+static int prepare_buffer(struct plamo_metal *m, id<MTLResource> resource) {
     @autoreleasepool {
         struct entry *entry = NULL;
         for (size_t i = 0; i < m->entries; ++i)
-            if (m->table[i].buffer == buffer) { entry = &m->table[i]; break; }
+            if (m->table[i].resource == resource) { entry = &m->table[i]; break; }
         if (!entry || entry->prepared) return 1;
         long page_bytes = sysconf(_SC_PAGESIZE);
         if (page_bytes <= 0 || page_bytes > UINT32_MAX) return plamo_metal_problem(m, "cannot determine GPU preload page size");
@@ -315,7 +356,7 @@ static int prepare_buffer(struct plamo_metal *m, id<MTLBuffer> buffer) {
         [encoder setComputePipelineState:m->touch];
         [encoder setBuffer:m->output offset:0 atIndex:1];
         uint32_t params[] = {(uint32_t)length, (uint32_t)page_bytes};
-        [encoder setBuffer:entry->buffer offset:0 atIndex:0];
+        [encoder setBuffer:(id<MTLBuffer>)entry->resource offset:0 atIndex:0];
         [encoder setBytes:params length:sizeof params atIndex:2];
         [encoder dispatchThreadgroups:MTLSizeMake((pages + 127) / 128, 1, 1) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
         ++m->info.dispatches;
@@ -328,7 +369,7 @@ static int prepare_buffer(struct plamo_metal *m, id<MTLBuffer> buffer) {
 int plamo_metal_warm_cache(struct plamo_metal *m) {
     plamo_metal_maintain(m);
     for (size_t i = 0; i < m->entries; ++i)
-        if (!prepare_buffer(m, m->table[i].buffer)) return 0;
+        if (!prepare_buffer(m, m->table[i].resource)) return 0;
     return 1;
 }
 
@@ -352,7 +393,7 @@ int plamo_metal_resolve_projection(struct plamo_metal *m, const uint16_t *w, uin
             }
         }
         if (found) {
-            out->tiles[out->count++] = (struct tile){found->buffer, address - found->source, first, count, 0, found->packed, NULL};
+            out->tiles[out->count++] = (struct tile){found->resource, address - found->source, first, count, 0, found->packed, NULL};
         } else {
             if (mapped && m->raw_mappings) {
                 size_t file; uint64_t source_offset;
@@ -377,7 +418,7 @@ void plamo_metal_encode_projection(struct plamo_metal *m, id<MTLComputeCommandEn
                                uint64_t columns, uint64_t tokens) {
     for (size_t i = 0; i < p->count; ++i) {
         const struct tile *t = &p->tiles[i];
-        plamo_metal_encode_linear(m, encoder, t->buffer, t->offset, t->packed, x, xs, y, t->first * 4, ys, t->rows, columns, tokens);
+        plamo_metal_encode_linear(m, encoder, t->resource, t->offset, t->packed, x, xs, y, t->first * 4, ys, t->rows, columns, tokens);
         uint64_t bytes = t->rows * columns * 2;
         if (t->mapped_bytes) {
             ++m->info.cache.misses;
@@ -405,7 +446,7 @@ int plamo_metal_preload_schema(struct plamo_metal *m) {
             const void *source = (const char *)*s->slot + first * row_bytes;
             NSUInteger offset;
             unsigned packed;
-            id<MTLBuffer> buffer = plamo_metal_weights(m, source, count * row_bytes, &offset, 0, &packed, 0);
+            id<MTLResource> buffer = plamo_metal_weights(m, source, count * row_bytes, &offset, 0, &packed, 0);
             if (!buffer || buffer == m->staging) return plamo_metal_problem(m, "BF16 matrices do not fit in the Metal residency budget");
             if (!prepare_buffer(m, buffer)) return 0;
         }

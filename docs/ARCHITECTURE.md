@@ -9,6 +9,7 @@ CLIと常駐ワーカーは同じエンジンを使います。各プロセス�
 | `runtime/tokenizer.c` | 語彙のマッピング、Trie、行索引、再利用する作業領域、UTF-8の符号化と復号 |
 | `runtime/metal.m` | GPUの初期化・終了、共通バッファ、射影とMLP、CPUへのフォールバック |
 | `runtime/metal_weights.m` | 重みの取得・保持・圧縮・解放、実行用ファイル、射影タイルの解決 |
+| `runtime/metal_textures.m` | 元のBF16ビットを保持するテクスチャへの転送と確保 |
 | `runtime/metal_model.m` | KV・RoPE、モデル全体のprefill／decode、候補の検証と確定 |
 | `runtime/parallel.c`・`src/` | CPUの実行スケジュール、AArch64／NEONの演算・I/O・トークナイザー |
 | `tools/server.py` | HTTP、認証、入力検証、JSON／SSEの応答 |

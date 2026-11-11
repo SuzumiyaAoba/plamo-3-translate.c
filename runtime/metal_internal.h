@@ -12,10 +12,10 @@
    every view must be resolved before state or KV can change. */
 #define MIB (UINT64_C(1024) * 1024)
 #define MAX_ENTRIES 4096
-struct entry { uintptr_t source; uint64_t bytes, allocated; id<MTLBuffer> buffer; unsigned prepared, packed; };
+struct entry { uintptr_t source; uint64_t bytes, allocated; id<MTLResource> resource; unsigned prepared, packed; };
 struct packing_size { uintptr_t source; uint64_t bytes, allocated; unsigned packed; };
 struct mapped_weight { const void *data; uint64_t bytes; id<MTLBuffer> buffer; };
-struct tile { id<MTLBuffer> buffer; NSUInteger offset; uint64_t first, rows, mapped_bytes; unsigned packed; const void *mapped_data; };
+struct tile { id<MTLResource> resource; NSUInteger offset; uint64_t first, rows, mapped_bytes; unsigned packed; const void *mapped_data; };
 struct projection { struct tile tiles[128]; size_t count; };
 struct view { id<MTLBuffer> buffer; void *source; NSUInteger offset; uint64_t bytes; };
 struct decode_layer {
@@ -32,15 +32,18 @@ struct plamo_metal {
     struct plamo_metal_info info;
     id<MTLDevice> device;
     id<MTLCommandQueue> queue;
-    id<MTLComputePipelineState> matvec[3], vector[3], matmul[3][4], norm, swiglu, residual, touch, analyze, pack, quantize4;
-    id<MTLComputePipelineState> matmul_split[3][4], split_reduce;
+    id<MTLComputePipelineState> matvec[4], vector[4], matmul[4][4], norm, swiglu, residual, touch, analyze, pack, quantize4;
+    id<MTLComputePipelineState> matmul_split[4][4], split_reduce;
     id<MTLComputePipelineState> compact[2], compact_split;
+    id<MTLComputePipelineState> texture_compact[2][2], texture_split[2][2];
+    id<MTLComputePipelineState> q4_rows;
     id<MTLBuffer> split;
     unsigned split_k;
     id<MTLComputePipelineState> decode_keys, decode_qkv, decode_attention, decode_residual;
     id<MTLComputePipelineState> prefill_qkv, prefill_attention, prefill_store;
     id<MTLComputePipelineState> verify_scores, verify_softmax, verify_values;
     id<MTLBuffer> staging, input, output;
+    id<MTLHeap> texture_heap;
     id<MTLBuffer> state, normalized, gate, branch, norms;
     id<MTLBuffer> pack_headers;
     id<MTLBuffer> decode_norms, qkv, attention, scores, logits;
@@ -51,9 +54,11 @@ struct plamo_metal {
     uint64_t layer_count, rope_count;
     NSUInteger final_norm;
     id residency;
-    unsigned residency_dirty, use_packing, cache_mappings, verify_encoding, draft_quantized, raw_mappings, raw_residency, fixed_bf16;
+    unsigned residency_dirty, use_packing, cache_mappings, verify_encoding, draft_quantized, raw_mappings, raw_residency, fixed_bf16, texture_weights, private_weights;
     uint64_t verification_tokens, verification_index;
     uint64_t maximum, capacity, used, staging_bytes;
+    uint64_t texture_heap_budget;
+    unsigned texture_heap_attempted;
     size_t entries;
     size_t packing_sizes;
     size_t mapped_count;
@@ -71,20 +76,21 @@ static inline double plamo_metal_now(void) {
 }
 static inline uint64_t plamo_metal_aligned(uint64_t bytes) { return (bytes + 16383) / 16384 * 16384; }
 
-void plamo_metal_residency_add(struct plamo_metal *, id<MTLBuffer>);
-void plamo_metal_residency_remove(struct plamo_metal *, id<MTLBuffer>);
+void plamo_metal_residency_add(struct plamo_metal *, id<MTLResource>);
+void plamo_metal_residency_remove(struct plamo_metal *, id<MTLResource>);
 void plamo_metal_residency_commit(struct plamo_metal *);
 int plamo_metal_problem(struct plamo_metal *, const char *);
 int plamo_metal_ensure_buffer(struct plamo_metal *, id<MTLBuffer> *, uint64_t);
 int plamo_metal_complete(struct plamo_metal *, id<MTLCommandBuffer>, id<MTLComputeCommandEncoder>);
-id<MTLBuffer> plamo_metal_weights(struct plamo_metal *, const void *, uint64_t, NSUInteger *, int, unsigned *, int);
+id<MTLResource> plamo_metal_weights(struct plamo_metal *, const void *, uint64_t, NSUInteger *, int, unsigned *, int);
+id<MTLTexture> plamo_metal_texture(struct plamo_metal *, const void *, id<MTLBuffer>, uint64_t, uint64_t, uint64_t *);
 id<MTLBuffer> plamo_metal_mapped_weights(struct plamo_metal *, const void *, uint64_t);
 void plamo_metal_release_mappings(struct plamo_metal *);
 int plamo_metal_preload_schema(struct plamo_metal *);
 int plamo_metal_resolve_projection(struct plamo_metal *, const uint16_t *, uint64_t, uint64_t, struct projection *, int);
 void plamo_metal_encode_projection(struct plamo_metal *, id<MTLComputeCommandEncoder>, const struct projection *,
                                    id<MTLBuffer>, uint64_t, id<MTLBuffer>, uint64_t, uint64_t, uint64_t);
-void plamo_metal_encode_linear(struct plamo_metal *, id<MTLComputeCommandEncoder>, id<MTLBuffer>, NSUInteger,
+void plamo_metal_encode_linear(struct plamo_metal *, id<MTLComputeCommandEncoder>, id<MTLResource>, NSUInteger,
                               unsigned, id<MTLBuffer>, uint64_t, id<MTLBuffer>, NSUInteger, uint64_t,
                               uint64_t, uint64_t, uint64_t);
 void plamo_metal_release_decode(struct plamo_metal *);

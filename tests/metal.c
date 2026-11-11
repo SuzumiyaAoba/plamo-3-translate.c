@@ -155,6 +155,8 @@ static void cache(void) {
     struct plamo_metal_info info;
     plamo_metal_get_info(metal, &info);
     CHECK(info.cache.cached_bytes == BYTES);
+    const char *private_weights = getenv("PLAMO_METAL_PRIVATE_WEIGHTS");
+    if (private_weights && !strcmp(private_weights, "1")) CHECK(info.private_weight_bytes == BYTES);
     struct plamo_matmul p = {base, input, actual, ROWS, COLS, 1, COLS, ROWS};
     uint64_t reads = plamo_io_stats[1];
     uint64_t commands = info.command_buffers;
@@ -417,12 +419,12 @@ static float unpack_bf16(uint16_t bits) {
     float value; memcpy(&value, &word, 4); return value;
 }
 
-static void draft_quantization(void) {
+static void draft_quantization(int private) {
     // The auxiliary model alone uses Q4. Check the GPU encoder and all three
     // projection families against an independent CPU quantize/dequantize.
-    const unsigned columns[] = {65, 256};
-    for (unsigned shape = 0; shape < 2; ++shape) {
-        unsigned rows = 133, cols = columns[shape], words = rows * cols;
+    const unsigned columns[] = {65, 256, 256};
+    for (unsigned shape = 0; shape < 3; ++shape) {
+        unsigned rows = shape == 2 ? 4163 : 133, cols = columns[shape], words = rows * cols;
         uint16_t *data = malloc(words * 2);
         float *dequantized = calloc(words, 4);
         CHECK(data && dequantized);
@@ -452,11 +454,14 @@ static void draft_quantization(void) {
         struct plamo_metal_config config = {.memory = PLAMO_METAL_RESIDENT, .packing = PLAMO_PACK_DRAFT_Q4,
             .maps = &map, .fds = &fd, .count = 1, .schema = schema, .reserve = 64 * 1024 * 1024, .available = available};
         char error[1024];
+        if (private) CHECK(!setenv("PLAMO_METAL_PRIVATE_WEIGHTS", "1", 1));
         struct plamo_metal *metal = plamo_metal_open(&config, error, sizeof error);
+        if (private) CHECK(!unsetenv("PLAMO_METAL_PRIVATE_WEIGHTS"));
         CHECK(metal);
         const unsigned counts[] = {1, 4, 8, 21};
         for (unsigned c = 0; c < sizeof counts / sizeof *counts; ++c) {
             unsigned tokens = counts[c], xs = cols + 7, ys = rows + 3;
+            if (shape == 2) xs = 2 * cols;
             float *x = malloc(tokens * xs * 4), *y = malloc(tokens * ys * 4);
             CHECK(x && y);
             for (unsigned i = 0; i < tokens * xs; ++i) x[i] = ((int)(i % 97) - 48) / 53.f;
@@ -476,10 +481,55 @@ static void draft_quantization(void) {
         struct plamo_metal_info info; plamo_metal_get_info(metal, &info);
         CHECK(!strcmp(info.weight_storage, "q4-draft") && !info.errors && !info.cpu_fallbacks);
         CHECK(info.cache.storage_bytes < words * 2);
+        CHECK(info.private_weight_bytes == (private ? words * 2 : 0));
         plamo_metal_close(metal);
         munmap(base, words * 2); fclose(file); free(data); free(dequantized);
     }
     puts("Metal draft Q4: PASS (CPU dequantization reference, zero blocks, tails, strided matvec/vector/matrix, reduced storage)");
+}
+
+static void texture_cache(int heap) {
+    enum { ROWS = 259, COLS = 1024, TOKENS = 65, WORDS = ROWS * COLS };
+    uint16_t *data = malloc(WORDS * 2);
+    float *x = malloc((COLS + 7) * TOKENS * 4), *y = malloc((ROWS + 9) * TOKENS * 4);
+    float *reference = malloc((ROWS + 9) * TOKENS * 4);
+    CHECK(data && x && y && reference);
+    for (unsigned i = 0; i < WORDS; ++i) data[i] = (i & 1 ? 0x8000 : 0) | 0x3c00 | (i * 17 & 127);
+    for (unsigned i = 0; i < (COLS + 7) * TOKENS; ++i) x[i] = ((int)(i % 83) - 41) / 47.f;
+    FILE *file = tmpfile(); CHECK(file && fwrite(data, 2, WORDS, file) == WORDS && !fflush(file));
+    int64_t fd = fileno(file);
+    void *base = mmap(NULL, WORDS * 2, PROT_READ, MAP_PRIVATE, (int)fd, 0); CHECK(base != MAP_FAILED);
+    struct plamo_mapping map = {base, WORDS * 2};
+    const uint64_t shape[] = {ROWS, COLS};
+    struct plamo_weight_spec schema[] = {{"texture", 2, shape, &base}, {0}};
+    struct plamo_metal_config config = {.memory = PLAMO_METAL_AUTO, .maps = &map, .fds = &fd, .count = 1,
+        .schema = schema, .packing = PLAMO_PACK_RAW, .reserve = 64 * 1024 * 1024, .available = available};
+    CHECK(!setenv("PLAMO_METAL_TEXTURE_WEIGHTS", "1", 1));
+    if (heap) CHECK(!setenv("PLAMO_METAL_TEXTURE_HEAP", "1", 1));
+    char error[1024]; struct plamo_metal *metal = plamo_metal_open(&config, error, sizeof error);
+    CHECK(!unsetenv("PLAMO_METAL_TEXTURE_WEIGHTS") && metal);
+    if (heap) CHECK(!unsetenv("PLAMO_METAL_TEXTURE_HEAP"));
+    CHECK(plamo_metal_preload(metal, base, WORDS * 2) && plamo_metal_warm_cache(metal));
+    struct plamo_metal_info info; plamo_metal_get_info(metal, &info);
+    CHECK(!strcmp(info.weight_storage, "texture-bf16") && info.packed_weight_bytes == WORDS * 2);
+    CHECK(info.cache.cached_bytes == WORDS * 2 && info.cache.storage_bytes >= WORDS * 2);
+    CHECK((info.weight_heap_bytes != 0) == heap);
+    uint64_t reads = plamo_io_stats[1];
+    const unsigned counts[] = {1, 2, 3, 4, 8, 9, 16, 21, TOKENS}, offsets[] = {0, 1, 3, 511};
+    for (unsigned c = 0; c < sizeof counts / sizeof *counts; ++c) for (unsigned o = 0; o < sizeof offsets / sizeof *offsets; ++o) {
+        unsigned rows = ROWS - 1, cols = o & 1 ? COLS - 3 : COLS, tokens = counts[c], xs = COLS + 7, ys = ROWS + 9;
+        const uint16_t *w = (const uint16_t *)base + offsets[o];
+        for (unsigned i = 0; i < TOKENS * ys; ++i) y[i] = reference[i] = -123456.f;
+        for (unsigned t = 0; t < tokens; ++t) plamo_bf16_matvec_serial(w, x + t * xs, reference + t * ys, rows, cols);
+        struct plamo_matmul p = {w, x, y, rows, cols, tokens, xs, ys}; CHECK(plamo_metal_linear(metal, &p));
+        for (unsigned i = 0; i < TOKENS * ys; ++i) CHECK(isfinite(y[i]) && fabs(y[i] - reference[i]) <= .0002 * (1 + fabs(reference[i])));
+    }
+    plamo_metal_get_info(metal, &info);
+    CHECK(plamo_io_stats[1] == reads && !info.errors && !info.cpu_fallbacks);
+    CHECK(!memcmp(base, data, WORDS * 2));
+    plamo_metal_close(metal); CHECK(!munmap(base, WORDS * 2) && !fclose(file));
+    free(data); free(x); free(y); free(reference);
+    puts("Metal texture cache: PASS (lossless BF16, FP32 CPU reference, aliases, odd shapes, strides, tails, 1..65 tokens, no rereads, immutable original bytes)");
 }
 
 int main(int argc, char **argv) {
@@ -487,10 +537,20 @@ int main(int argc, char **argv) {
     int result = kernels(require_gpu);
     if (result) return result == 77 ? 0 : result;
     cache();
+    CHECK(!setenv("PLAMO_METAL_PRIVATE_WEIGHTS", "1", 1));
+    cache();
+    CHECK(!unsetenv("PLAMO_METAL_PRIVATE_WEIGHTS"));
     fused_mlp();
     preload();
     packed_cache();
     disk_cache();
-    draft_quantization();
+    CHECK(!setenv("PLAMO_METAL_PRIVATE_WEIGHTS", "1", 1));
+    packed_cache();
+    disk_cache();
+    CHECK(!unsetenv("PLAMO_METAL_PRIVATE_WEIGHTS"));
+    draft_quantization(0);
+    draft_quantization(1);
+    texture_cache(0);
+    texture_cache(1);
     return 0;
 }

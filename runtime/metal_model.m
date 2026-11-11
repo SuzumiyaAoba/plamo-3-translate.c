@@ -33,7 +33,7 @@ static int prepare_graph(struct plamo_metal *m) {
         struct projection *p = projections[i];
         for (size_t j = 0; j < p->count; ++j) {
             struct tile *t = &p->tiles[j];
-            if (t->mapped_data && !(t->buffer = plamo_metal_mapped_weights(m, t->mapped_data, t->mapped_bytes))) return 0;
+            if (t->mapped_data && !(t->resource = plamo_metal_mapped_weights(m, t->mapped_data, t->mapped_bytes))) return 0;
         }
     }
     return 1;
