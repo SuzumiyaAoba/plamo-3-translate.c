@@ -73,21 +73,21 @@ inline float4 weight4(device const ushort *w, ulong i, constant Linear &p) {
 
 // Integer texture reads preserve all BF16 encodings, including NaN payloads.
 // Each cache image has a power-of-two width; aliases remain linear word offsets.
-inline uint4 texture_words(texture2d<uint, access::read> w, uint pixel) {
+inline ushort4 texture_words(texture2d<ushort, access::read> w, uint pixel) {
     uint width = w.get_width();
     return w.read(uint2(pixel & (width - 1), pixel >> (31 - clz(width))));
 }
 template<uint Storage>
-inline float weight_value(texture2d<uint, access::read> w, ulong i, constant Linear &p) {
+inline float weight_value(texture2d<ushort, access::read> w, ulong i, constant Linear &p) {
     uint index = uint(i) + p.weight_offset, bits = texture_words(w, index >> 2)[index & 3];
     return bf16(ushort((bits >> 1) | ((bits & 1) << 15)));
 }
 template<uint Storage>
-inline float4 weight4(texture2d<uint, access::read> w, ulong i, constant Linear &p) {
+inline float4 weight4(texture2d<ushort, access::read> w, ulong i, constant Linear &p) {
     uint index = uint(i) + p.weight_offset;
     if (index & 3) return float4(weight_value<Storage>(w, i, p), weight_value<Storage>(w, i + 1, p),
                                 weight_value<Storage>(w, i + 2, p), weight_value<Storage>(w, i + 3, p));
-    uint4 bits = texture_words(w, index >> 2);
+    uint4 bits = uint4(texture_words(w, index >> 2));
     return as_type<float4>(((bits >> 1) | ((bits & 1) << 15)) << 16);
 }
 template<uint Storage>
@@ -95,11 +95,25 @@ inline float4 weight_row4(device const ushort *w, uint row, uint col, constant L
     return weight4<Storage>(w, ulong(row) * p.columns + col, p);
 }
 template<uint Storage>
-inline float4 weight_row4(texture2d<uint, access::read> w, uint row, uint col, constant Linear &p) {
+inline float4 weight_row4(texture2d<ushort, access::read> w, uint row, uint col, constant Linear &p) {
     if (Storage != 4) return weight4<Storage>(w, ulong(row) * p.columns + col, p);
     // The encoder selects this form only for complete, unaliased image rows.
-    uint4 bits = w.read(uint2(col >> 2, row));
+    uint4 bits = uint4(w.read(uint2(col >> 2, row)));
     return as_type<float4>(((bits >> 1) | ((bits & 1) << 15)) << 16);
+}
+
+template<uint Storage>
+inline ushort4 weight_row_bits4(device const ushort *w, uint row, uint col, constant Linear &p) {
+    return ushort4(as_type<uint4>(weight_row4<Storage>(w, row, col, p)) >> 16);
+}
+template<uint Storage>
+inline ushort4 weight_row_bits4(texture2d<ushort, access::read> w, uint row, uint col, constant Linear &p) {
+    ushort4 bits;
+    if (Storage == 4) bits = w.read(uint2(col >> 2, row));
+    else bits = texture_words(w, (row * p.columns + col + p.weight_offset) >> 2);
+    // Keep the read and inverse rotation in sixteen-bit registers until the
+    // matrix fragment is expanded for FP32 arithmetic.
+    return (bits >> 1) | (bits << 15);
 }
 
 kernel void plamo_pack_analyze(device const ushort *w [[buffer(0)]], device PackBlock *headers [[buffer(1)]],
@@ -296,12 +310,13 @@ inline void matmul_compact(Weights w, device const float *x, device float *y,
     for (uint base = group.z * (p.columns / Parts); base < (group.z + 1) * (p.columns / Parts); base += K) {
         for (uint i = tid; i < R * (K / 4); i += R * 4) {
             uint row = group.x * R + i / (K / 4), col = base + (i % (K / 4)) * 4;
-            float4 value = 0.0f;
+            ushort4 value = 0;
             if (row < p.rows && col + 3 < p.columns && !(p.columns % 4) && p.aligned_weights)
-                value = weight_row4<Packed>(w, row, col, p);
+                value = weight_row_bits4<Packed>(w, row, col, p);
             else for (uint j = 0; j < 4; ++j)
-                if (row < p.rows && col + j < p.columns) value[j] = weight_value<Packed>(w, ulong(row) * p.columns + col + j, p);
-            *((threadgroup ushort4 *)(weights + i * 4)) = ushort4(as_type<uint4>(value) >> 16);
+                if (row < p.rows && col + j < p.columns)
+                    value[j] = ushort(as_type<uint>(weight_value<Packed>(w, ulong(row) * p.columns + col + j, p)) >> 16);
+            *((threadgroup ushort4 *)(weights + i * 4)) = value;
         }
         for (uint i = tid; i < N * (K / 4); i += R * 4) {
             uint token = group.y * N + i / (K / 4), col = base + (i % (K / 4)) * 4;
@@ -449,7 +464,7 @@ SPLIT_MATRIX_KERNEL(plamo_matmul24_split_q4, 2, 24)
 SPLIT_MATRIX_KERNEL(plamo_matmul32_split_q4, 2, 32)
 
 template<uint Storage>
-inline void texture_matvec(texture2d<uint, access::read> w, device const float *x, device float *y,
+inline void texture_matvec(texture2d<ushort, access::read> w, device const float *x, device float *y,
                             constant Linear &p, uint3 group, uint simd, uint lane) {
     uint row = group.x * 4 + simd;
     if (row >= p.rows) return;
@@ -478,14 +493,14 @@ inline void texture_matvec(texture2d<uint, access::read> w, device const float *
     if (!lane) y[ulong(group.y) * p.output_stride + row] = value;
 }
 #define TEXTURE_VECTOR_KERNEL(NAME, BODY) \
-kernel void NAME(texture2d<uint, access::read> w [[texture(0)]], device const float *x [[buffer(1)]], \
+kernel void NAME(texture2d<ushort, access::read> w [[texture(0)]], device const float *x [[buffer(1)]], \
                  device float *y [[buffer(2)]], constant Linear &p [[buffer(3)]], \
                  uint3 group [[threadgroup_position_in_grid]], uint simd [[simdgroup_index_in_threadgroup]], \
                  uint lane [[thread_index_in_simdgroup]]) { BODY<3>(w, x, y, p, group, simd, lane); }
 TEXTURE_VECTOR_KERNEL(plamo_matvec_texture, texture_matvec)
 TEXTURE_VECTOR_KERNEL(plamo_matmul_vector_texture, matmul_vector)
 #define TEXTURE_MATRIX_KERNEL(NAME, N, PARTS) \
-kernel void NAME(texture2d<uint, access::read> w [[texture(0)]], device const float *x [[buffer(1)]], \
+kernel void NAME(texture2d<ushort, access::read> w [[texture(0)]], device const float *x [[buffer(1)]], \
                  device float *y [[buffer(2)]], constant Linear &p [[buffer(3)]], \
                  uint3 group [[threadgroup_position_in_grid]], uint tid [[thread_index_in_threadgroup]], \
                  uint simd [[simdgroup_index_in_threadgroup]]) { \
@@ -500,7 +515,7 @@ TEXTURE_MATRIX_KERNEL(plamo_matmul16_split_texture, 16, 4)
 TEXTURE_MATRIX_KERNEL(plamo_matmul24_split_texture, 24, 4)
 TEXTURE_MATRIX_KERNEL(plamo_matmul32_split_texture, 32, 4)
 #define TEXTURE_COMPACT_KERNEL(NAME, N, K, PARTS, R, STORAGE) \
-kernel void NAME(texture2d<uint, access::read> w [[texture(0)]], device const float *x [[buffer(1)]], \
+kernel void NAME(texture2d<ushort, access::read> w [[texture(0)]], device const float *x [[buffer(1)]], \
                  device float *y [[buffer(2)]], constant Linear &p [[buffer(3)]], \
                  uint3 group [[threadgroup_position_in_grid]], uint tid [[thread_index_in_threadgroup]], \
                  uint simd [[simdgroup_index_in_threadgroup]]) { \
