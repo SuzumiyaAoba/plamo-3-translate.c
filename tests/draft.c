@@ -35,6 +35,7 @@ static int fake_peer(void) {
             if (header[1] == 107519) return 0; // Deliberate pipe closure.
             assert(header[2] <= PLAMO_DRAFT_MAX);
             reply.count = header[2];
+            if (header[1] == 43 && reply.count > 8) reply.count = 8; // Low confidence.
             for (unsigned i = 0; i < reply.count; ++i) reply.ids[i] = header[1] + i;
             if (header[1] == 42) ++reply.ids[0]; // Invalid known first token.
         }
@@ -56,6 +57,26 @@ static void client(const char *executable) {
     assert(!plamo_draft_propose(d, 10, 0, ids));
     assert(plamo_draft_propose(d, 10, 4, ids) == 4 && ids[0] == 10 && ids[3] == 13);
     assert(plamo_draft_accept(d, 2));
+    // Observe wire requests through the fake peer: complete acceptance grows
+    // to sixteen, rejection shrinks, and a confidence stop caps the next round.
+    assert(plamo_draft_reset(d, "adaptive", 2));
+    assert(plamo_draft_propose(d, 10, 16, ids) == 8);
+    assert(plamo_draft_accept(d, 8));
+    assert(plamo_draft_propose(d, 10, 16, ids) == 16);
+    assert(plamo_draft_accept(d, 3));
+    assert(plamo_draft_propose(d, 10, 16, ids) == 8);
+    assert(plamo_draft_accept(d, 1));
+    for (unsigned n = 2; n <= 16; n *= 2) {
+        assert(plamo_draft_propose(d, 10, 16, ids) == n);
+        assert(plamo_draft_accept(d, n));
+    }
+    assert(plamo_draft_propose(d, 43, 16, ids) == 8);
+    assert(plamo_draft_accept(d, 8));
+    assert(plamo_draft_propose(d, 10, 16, ids) == 8);
+    assert(plamo_draft_accept(d, 8));
+    assert(plamo_draft_reset(d, "reset", 1));
+    assert(plamo_draft_propose(d, 10, 16, ids) == 8);
+    assert(plamo_draft_accept(d, 8));
     assert(!plamo_draft_propose(d, 42, 4, ids));
     plamo_draft_close(d);
     d = plamo_draft_open(); assert(d);
@@ -71,18 +92,18 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "--draft-peer")) return fake_peer();
     // Every truncation boundary, including multiple evictions and a prefix
     // already at capacity. Compare with independently appended accepted rows.
-    for (unsigned initial = 0; initial <= 12; ++initial)
-        for (unsigned processed = 0; processed <= 8; ++processed)
+    for (unsigned initial = 0; initial <= 20; ++initial)
+        for (unsigned processed = 0; processed <= 16; ++processed)
             for (unsigned accepted = 0; accepted <= processed; ++accepted) {
-                float k[36] = {0}, v[36] = {0}, ek[36] = {0}, ev[36] = {0};
-                struct cache c = {k, v, 12, 0, 3, 1}, expected = {ek, ev, 12, 0, 3, 1};
+                float k[60] = {0}, v[60] = {0}, ek[60] = {0}, ev[60] = {0};
+                struct cache c = {k, v, 20, 0, 3, 1}, expected = {ek, ev, 20, 0, 3, 1};
                 struct rotation rotation = {.cache = &c, .processed_count = 99, .scale_bits = 123};
                 struct gqa gqa = {0};
                 struct mixer mixer = {.cache = &c, .rotation = &rotation, .gqa = &gqa};
                 struct layer layer = {.mixer = &mixer}, *layers[] = {&layer};
                 struct model model = {.layers = layers, .count = 1};
                 for (unsigned i = 0; i < initial; ++i) { append(&c, i); append(&expected, i); }
-                struct plamo_draft_checkpoint *s = plamo_draft_checkpoint(&model, 8);
+                struct plamo_draft_checkpoint *s = plamo_draft_checkpoint(&model, 16);
                 assert(s);
                 for (unsigned i = 0; i < processed; ++i) append(&c, initial + i);
                 for (unsigned i = 0; i < accepted; ++i) append(&expected, initial + i);

@@ -156,9 +156,11 @@ static void usage(void) {
 static int draft_peer(struct plamo_engine *engine) {
     const char *setting = getenv("PLAMO_DRAFT_MIN_MARGIN");
     char *end;
+    int explicit_margin = setting != NULL;
     float minimum_margin = setting ? strtof(setting, &end) : 0.0f;
     if (setting && (!*setting || *end || !isfinite(minimum_margin) || minimum_margin < 0)) return 64;
     setting = getenv("PLAMO_DRAFT_MIN_TOKENS");
+    int explicit_minimum = setting != NULL;
     unsigned long minimum_tokens = setting ? strtoul(setting, &end, 10) : 2;
     if (setting && (!*setting || *end || minimum_tokens < 1 || minimum_tokens > PLAMO_DRAFT_MAX)) return 64;
     setting = getenv("PLAMO_DRAFT_TRACE");
@@ -185,6 +187,10 @@ static int draft_peer(struct plamo_engine *engine) {
                 plamo_engine_translate(engine, text, frame[1], 1, NULL, &result, error, sizeof error);
             if (trace) fprintf(stderr, "draft reset direction=%u\n", frame[1]);
         } else if (frame[0] == 2 && frame[1] < plamo_model.vocab && frame[2] && frame[2] <= PLAMO_DRAFT_MAX && !frame[3] && !saved) {
+            // Longer blocks pay off only when the proposer remains confident.
+            // Keep existing explicit confidence settings for native callers.
+            float proposal_margin = !explicit_margin && frame[2] > 8 ? 1.0f : minimum_margin;
+            unsigned proposal_minimum = !explicit_minimum && frame[2] > 8 ? 8 : (unsigned)minimum_tokens;
             saved = plamo_draft_checkpoint(&plamo_model, frame[2]);
             if (saved) {
                 ids[0] = frame[1]; processed = 0; proposed = 1;
@@ -193,12 +199,12 @@ static int draft_peer(struct plamo_engine *engine) {
                 float confidence = INFINITY;
                 int failed = 0;
                 while (proposed < frame[2] && ids[proposed - 1] != 1 && ids[proposed - 1] != 16) {
-                    if (minimum_margin && proposed >= minimum_tokens && confidence < minimum_margin) break;
+                    if (proposal_margin && proposed >= proposal_minimum && confidence < proposal_margin) break;
                     if (!plamo_forward(&plamo_model, ids[proposed - 1])) { failed = 1; break; }
                     ++processed;
                     uint32_t id = (uint32_t)plamo_argmax(plamo_model.logits, plamo_model.vocab);
                     if (id >= plamo_model.vocab) { failed = 1; break; }
-                    if (minimum_margin || trace) {
+                    if (proposal_margin || trace) {
                         float maximum = plamo_model.logits[id];
                         plamo_model.logits[id] = -INFINITY;
                         uint32_t alternative = (uint32_t)plamo_argmax(plamo_model.logits, plamo_model.vocab);
@@ -206,7 +212,7 @@ static int draft_peer(struct plamo_engine *engine) {
                         alternatives[proposed] = alternative;
                         margins[proposed] = maximum - plamo_model.logits[alternative];
                         if (margins[proposed] < confidence) confidence = margins[proposed];
-                        if (minimum_margin && proposed >= minimum_tokens && confidence < minimum_margin) break;
+                        if (proposal_margin && proposed >= proposal_minimum && confidence < proposal_margin) break;
                     }
                     ids[proposed++] = id;
                 }

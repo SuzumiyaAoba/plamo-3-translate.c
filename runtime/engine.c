@@ -136,7 +136,8 @@ struct plamo_engine *plamo_engine_open(enum plamo_memory_mode mode, int tokenize
                 .maps = plamo_weight_mappings, .fds = plamo_weight_fds,
                 .count = (size_t)plamo_weight_mapping_count, .schema = plamo_weight_schema,
                 .reserve = PLAMO_MEMORY_RESERVE, .available = plamo_reclaimable_memory,
-                .revision = plamo_model_revision
+                .revision = plamo_model_revision,
+                .prefer_texture_weights = !strcmp(plamo_model_name, "plamo-3-translate-8b")
             };
             const char *disk_cache = getenv("PLAMO_METAL_CACHE");
             char default_cache[4096];
@@ -270,7 +271,7 @@ static void prepare_draft(struct plamo_engine *e) {
     double start = now();
     e->draft = plamo_draft_open();
     if (e->draft) {
-        e->info.speculative_tokens = 8;
+        e->info.speculative_tokens = PLAMO_VERIFY_MAX;
         const char *setting = getenv("PLAMO_SPECULATIVE_TOKENS");
         if (setting) {
             char *end;

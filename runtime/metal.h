@@ -18,6 +18,8 @@ struct plamo_metal_config {
     uint64_t reserve;
     uint64_t (*available)(void);
     const char *disk_cache_path, *revision;
+    /* Prefer exact BF16 textures when the complete model fits the device. */
+    unsigned prefer_texture_weights;
 };
 struct plamo_metal_info {
     char device[128], precision[16], weight_storage[24], note[256];

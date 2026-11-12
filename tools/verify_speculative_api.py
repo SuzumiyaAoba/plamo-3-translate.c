@@ -75,7 +75,7 @@ def main():
         assert ids == expected[direction]['token_ids'] and result['translation'] == expected[direction]['translation']
         assert timing['decode_steps'] == speculative['consumed_tokens'] == len(ids) - 1
         assert speculative['batches'] > 0 and timing['decode_command_buffers'] >= speculative['batches']
-        assert result['compute']['precision'] == 'fp32' and result['compute']['weight_storage'] in ('bf16', 'lossless-bf16')
+        assert result['compute']['precision'] == 'fp32' and result['compute']['weight_storage'] in ('bf16', 'lossless-bf16', 'texture-bf16')
         assert not result['compute']['errors'] and not result['compute']['cpu_fallbacks']
         return dict(direction=direction, input=text, wall_seconds=time.monotonic() - start,
                     tokens_per_second=timing['decode_steps'] / timing['decode_seconds'],

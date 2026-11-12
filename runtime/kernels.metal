@@ -35,8 +35,8 @@ inline float weight_value(device const ushort *w, ulong i, constant Linear &p) {
     if (Storage == 2) {
         i += p.weight_offset;
         device const uchar *block = (device const uchar *)w + (i / 32) * 20;
-        uint j = uint(i) & 31, value = block[4 + (j & 15)];
-        value = j < 16 ? value & 15 : value >> 4;
+        uint j = uint(i) & 31, value = block[4 + j / 2];
+        value = (value >> ((j & 1) * 4)) & 15;
         return float(int(value) - 8) * *((device const float *)block);
     }
     return bf16(weight_bits<Storage == 1>(w, i, p));
@@ -47,8 +47,8 @@ inline float4 weight4(device const ushort *w, ulong i, constant Linear &p) {
         i += p.weight_offset;
         device const uchar *block = (device const uchar *)w + (i / 32) * 20;
         uint j = uint(i) & 31;
-        uint4 value = uint4(*((device const uchar4 *)(block + 4 + (j & 15))));
-        value = j < 16 ? value & 15 : value >> 4;
+        uint code = *((device const ushort *)(block + 4 + j / 2));
+        uint4 value = (uint4(code) >> uint4(0, 4, 8, 12)) & 15;
         return float4(int4(value) - 8) * *((device const float *)block);
     }
     if (!Packed) return as_type<float4>(uint4(*((device const ushort4 *)(w + i))) << 16);
@@ -180,10 +180,9 @@ inline void matvec(device const ushort *w, device const float *x, device float *
             uint i = row * p.columns + k + p.weight_offset, j = i & 31;
             device const uchar *block = (device const uchar *)w + ulong(i >> 5) * 20;
             float scale = *((device const float *)block);
-            uint4 low = uint4(*((device const uchar4 *)(block + 4 + (j & 15))));
-            uint4 high = uint4(*((device const uchar4 *)(block + 8 + (j & 15))));
-            low = j < 16 ? low & 15 : low >> 4;
-            high = j < 16 ? high & 15 : high >> 4;
+            uint code = *((device const uint *)(block + 4 + j / 2));
+            uint4 low = (uint4(code) >> uint4(0, 4, 8, 12)) & 15;
+            uint4 high = (uint4(code) >> uint4(16, 20, 24, 28)) & 15;
             float4 input0 = *((device const float4 *)(x + ulong(group.y) * p.input_stride + k));
             float4 input1 = *((device const float4 *)(x + ulong(group.y) * p.input_stride + k + 4));
             sum0 = fma(float4(int4(low) - 8) * scale, input0, sum0);
@@ -301,7 +300,7 @@ inline void matmul_tile(Weights w, device const float *x, device float *y,
 // Keep all original BF16 bits in threadgroup memory. A half matrix is only
 // a 16-bit carrier: expand its raw bits into float matrix fragments before
 // the same FP32 MMA sequence. No half arithmetic or weight rounding occurs.
-template<uint Packed, uint N, uint K, uint Parts, uint R, typename Weights>
+template<uint Packed, uint N, uint K, uint Parts, uint R, bool Complete = false, typename Weights>
 inline void matmul_compact(Weights w, device const float *x, device float *y,
                         constant Linear &p, uint3 group, uint tid, uint simd,
                         threadgroup ushort *weights, threadgroup float *inputs, threadgroup float *outputs) {
@@ -311,7 +310,7 @@ inline void matmul_compact(Weights w, device const float *x, device float *y,
         for (uint i = tid; i < R * (K / 4); i += R * 4) {
             uint row = group.x * R + i / (K / 4), col = base + (i % (K / 4)) * 4;
             ushort4 value = 0;
-            if (row < p.rows && col + 3 < p.columns && !(p.columns % 4) && p.aligned_weights)
+            if (Complete || (row < p.rows && col + 3 < p.columns && !(p.columns % 4) && p.aligned_weights))
                 value = weight_row_bits4<Packed>(w, row, col, p);
             else for (uint j = 0; j < 4; ++j)
                 if (row < p.rows && col + j < p.columns)
@@ -321,7 +320,7 @@ inline void matmul_compact(Weights w, device const float *x, device float *y,
         for (uint i = tid; i < N * (K / 4); i += R * 4) {
             uint token = group.y * N + i / (K / 4), col = base + (i % (K / 4)) * 4;
             float4 value = 0.0f;
-            if (token < p.tokens && col + 3 < p.columns && !(p.input_stride % 4))
+            if (Complete || (token < p.tokens && col + 3 < p.columns && !(p.input_stride % 4)))
                 value = *((device const float4 *)(x + ulong(token) * p.input_stride + col));
             else for (uint j = 0; j < 4; ++j)
                 if (token < p.tokens && col + j < p.columns) value[j] = x[ulong(token) * p.input_stride + col + j];
@@ -351,7 +350,7 @@ inline void matmul_compact(Weights w, device const float *x, device float *y,
     threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint i = tid; i < R * N; i += R * 4) {
         uint row = group.x * R + i / N, token = group.y * N + i % N;
-        if (row < p.rows && token < p.tokens) y[ulong(token) * p.output_stride + row] = outputs[i];
+        if (Complete || (row < p.rows && token < p.tokens)) y[ulong(token) * p.output_stride + row] = outputs[i];
     }
 }
 kernel void plamo_matmul8_compact(device const ushort *w [[buffer(0)]], device const float *x [[buffer(1)]],
@@ -407,9 +406,9 @@ kernel void plamo_matvec_q4_rows(device const ushort *w [[buffer(0)]], device co
         uint i = row * p.columns + k + p.weight_offset, j = i & 31;
         device const uchar *block = (device const uchar *)w + ulong(i >> 5) * 20;
         float scale = *((device const float *)block);
-        uint4 low = uint4(*((device const uchar4 *)(block + 4 + (j & 15))));
-        uint4 high = uint4(*((device const uchar4 *)(block + 8 + (j & 15))));
-        low = j < 16 ? low & 15 : low >> 4; high = j < 16 ? high & 15 : high >> 4;
+        uint code = *((device const uint *)(block + 4 + j / 2));
+        uint4 low = (uint4(code) >> uint4(0, 4, 8, 12)) & 15;
+        uint4 high = (uint4(code) >> uint4(16, 20, 24, 28)) & 15;
         float4 a = *((device const float4 *)(x + ulong(group.y) * p.input_stride + k));
         float4 b = *((device const float4 *)(x + ulong(group.y) * p.input_stride + k + 4));
         sum0 = fma(float4(int4(low) - 8) * scale, a, sum0);
@@ -514,22 +513,25 @@ TEXTURE_MATRIX_KERNEL(plamo_matmul8_split_texture, 8, 4)
 TEXTURE_MATRIX_KERNEL(plamo_matmul16_split_texture, 16, 4)
 TEXTURE_MATRIX_KERNEL(plamo_matmul24_split_texture, 24, 4)
 TEXTURE_MATRIX_KERNEL(plamo_matmul32_split_texture, 32, 4)
-#define TEXTURE_COMPACT_KERNEL(NAME, N, K, PARTS, R, STORAGE) \
+#define TEXTURE_COMPACT_KERNEL(NAME, N, K, PARTS, R, STORAGE, COMPLETE) \
 kernel void NAME(texture2d<ushort, access::read> w [[texture(0)]], device const float *x [[buffer(1)]], \
                  device float *y [[buffer(2)]], constant Linear &p [[buffer(3)]], \
                  uint3 group [[threadgroup_position_in_grid]], uint tid [[thread_index_in_threadgroup]], \
                  uint simd [[simdgroup_index_in_threadgroup]]) { \
     threadgroup ushort4 weights[(R * K > R * N * 2 ? R * K : R * N * 2) / 4]; threadgroup float inputs[N * K]; \
-    matmul_compact<STORAGE, N, K, PARTS, R>(w, x, y, p, group, tid, simd, \
+    matmul_compact<STORAGE, N, K, PARTS, R, COMPLETE>(w, x, y, p, group, tid, simd, \
         (threadgroup ushort *)weights, inputs, (threadgroup float *)weights); }
-TEXTURE_COMPACT_KERNEL(plamo_matmul8_compact_texture, 8, 64, 1, 32, 3)
-TEXTURE_COMPACT_KERNEL(plamo_matmul16_compact_texture, 16, 32, 1, 64, 3)
-TEXTURE_COMPACT_KERNEL(plamo_matmul8_split_compact_texture, 8, 32, 4, 32, 3)
-TEXTURE_COMPACT_KERNEL(plamo_matmul16_split_compact_texture, 16, 32, 4, 32, 3)
-TEXTURE_COMPACT_KERNEL(plamo_matmul8_compact_texture_direct, 8, 64, 1, 32, 4)
-TEXTURE_COMPACT_KERNEL(plamo_matmul16_compact_texture_direct, 16, 32, 1, 64, 4)
-TEXTURE_COMPACT_KERNEL(plamo_matmul8_split_compact_texture_direct, 8, 32, 4, 32, 4)
-TEXTURE_COMPACT_KERNEL(plamo_matmul16_split_compact_texture_direct, 16, 32, 4, 32, 4)
+TEXTURE_COMPACT_KERNEL(plamo_matmul8_compact_texture, 8, 64, 1, 32, 3, false)
+TEXTURE_COMPACT_KERNEL(plamo_matmul16_compact_texture, 16, 32, 1, 64, 3, false)
+TEXTURE_COMPACT_KERNEL(plamo_matmul8_split_compact_texture, 8, 32, 4, 32, 3, false)
+TEXTURE_COMPACT_KERNEL(plamo_matmul16_split_compact_texture, 16, 32, 4, 32, 3, false)
+TEXTURE_COMPACT_KERNEL(plamo_matmul8_compact_texture_direct, 8, 64, 1, 32, 4, false)
+TEXTURE_COMPACT_KERNEL(plamo_matmul16_compact_texture_direct, 16, 32, 1, 64, 4, false)
+TEXTURE_COMPACT_KERNEL(plamo_matmul8_split_compact_texture_direct, 8, 32, 4, 32, 4, false)
+TEXTURE_COMPACT_KERNEL(plamo_matmul16_split_compact_texture_direct, 16, 32, 4, 32, 4, false)
+// The host proves complete N8/R32/K32 tiles before selecting these kernels.
+TEXTURE_COMPACT_KERNEL(plamo_matmul8_full_texture, 8, 32, 4, 32, 3, true)
+TEXTURE_COMPACT_KERNEL(plamo_matmul8_full_texture_direct, 8, 32, 4, 32, 4, true)
 
 kernel void plamo_split_reduce(device const float *partial [[buffer(0)]], device float *out [[buffer(1)]],
                                 constant Linear &p [[buffer(2)]], uint i [[thread_position_in_grid]]) {
@@ -937,7 +939,7 @@ kernel void plamo_prefill_store(device const float *qkv [[buffer(0)]], device fl
     }
 }
 
-// Q4 proposal-only cache: 32 original values -> FP32 scale + 16 nibble bytes.
+// Q4 proposal-only cache: FP32 scale + 16 bytes of adjacent code pairs.
 kernel void plamo_draft_quantize4(device const ushort *w [[buffer(0)]], device uchar *out [[buffer(1)]],
                                    constant uint &count [[buffer(2)]], uint block [[threadgroup_position_in_grid]],
                                    uint lane [[thread_index_in_simdgroup]]) {
@@ -947,11 +949,68 @@ kernel void plamo_draft_quantize4(device const ushort *w [[buffer(0)]], device u
     device uchar *data = out + ulong(block) * 20;
     if (!lane) *((device float *)data) = scale;
     if (lane < 16) {
-        uint first = block * 32 + lane, second = first + 16;
+        uint first = block * 32 + lane * 2, second = first + 1;
         float a = first < count ? bf16(w[first]) : 0.0f;
         float b = second < count ? bf16(w[second]) : 0.0f;
         uint qa = scale ? uint(clamp(int(rint(a / scale)), -8, 7) + 8) : 8;
         uint qb = scale ? uint(clamp(int(rint(b / scale)), -8, 7) + 8) : 8;
         data[4 + lane] = uchar(qa | qb << 4);
     }
+}
+
+// Adjacent Q4 codes become exact half integers; FP32 block scales and sums
+// avoid rounding small weight scales. Only auxiliary activations use half.
+template<uint Width>
+inline void draft_dot(device const uchar *w, device const half *x, device float *y,
+                      constant Linear &p, uint3 group, uint simd, uint lane) {
+    uint inner = lane % Width, row = group.x * (128 / Width) + simd * (32 / Width) + lane / Width;
+    float sum = 0.0f;
+    for (uint k = inner * 8; k < p.columns; k += Width * 8) {
+        if (row >= p.rows) continue;
+        uint i = row * p.columns + k + p.weight_offset, j = i & 31;
+        device const uchar *block = w + ulong(i >> 5) * 20;
+        float scale = *((device const float *)block);
+        uint code = as_type<uint>(*((device const packed_uchar4 *)(block + 4 + j / 2)));
+        uint4 bytes = (uint4(code) >> uint4(0, 8, 16, 24)) & 255;
+        uint4 bits = (bytes & 15) | ((bytes & 240) << 12) | 0x64006400;
+        half4 c = as_type<half4>(bits.xy) - half4(1032), d = as_type<half4>(bits.zw) - half4(1032);
+        ulong index = ulong(group.y) * p.input_stride + k;
+        half4 a = *((device const half4 *)(x + index)), b = *((device const half4 *)(x + index + 4));
+        half4 products = fma(c, a, d * b);
+        half dot = (products.x + products.y) + (products.z + products.w);
+        sum = fma(float(dot), scale, sum);
+    }
+    if (Width == 32) sum = simd_sum(sum);
+    else {
+        #pragma unroll
+        for (uint delta = Width / 2; delta; delta /= 2) sum += simd_shuffle_xor(sum, delta);
+    }
+    if (!inner && row < p.rows) y[ulong(group.y) * p.output_stride + row] = sum;
+}
+#define DRAFT_DOT_KERNEL(NAME, WIDTH) \
+kernel void NAME(device const uchar *w [[buffer(0)]], device const half *x [[buffer(1)]], \
+                 device float *y [[buffer(2)]], constant Linear &p [[buffer(3)]], \
+                 uint3 group [[threadgroup_position_in_grid]], uint simd [[simdgroup_index_in_threadgroup]], \
+                 uint lane [[thread_index_in_simdgroup]]) { draft_dot<WIDTH>(w, x, y, p, group, simd, lane); }
+DRAFT_DOT_KERNEL(plamo_draft_dot32, 32)
+DRAFT_DOT_KERNEL(plamo_draft_dot8, 8)
+
+kernel void plamo_draft_norm(device const float *x [[buffer(0)]], device const ushort *w [[buffer(1)]],
+                             device float *y [[buffer(2)]], constant MLP &p [[buffer(3)]],
+                             device half *copy [[buffer(4)]], uint token [[threadgroup_position_in_grid]],
+                             uint tid [[thread_index_in_threadgroup]]) {
+    threadgroup float partials[4], inverse;
+    ulong base = ulong(token) * p.hidden;
+    rms_inverse(x + base, p.hidden, tid, partials, inverse);
+    for (uint i = tid; i < p.hidden; i += 128) {
+        float value = (x[base + i] * inverse) * (bf16(w[i]) + 1.0f);
+        y[base + i] = value; copy[base + i] = half(value);
+    }
+}
+kernel void plamo_draft_swiglu(device float *x [[buffer(0)]], constant MLP &p [[buffer(1)]],
+                               device half *copy [[buffer(2)]], uint2 pos [[thread_position_in_grid]]) {
+    if (pos.x >= p.intermediate || pos.y >= p.tokens) return;
+    ulong i = ulong(pos.y) * 2 * p.intermediate + pos.x;
+    float value = (x[i] / (1.0f + plamo_exp(-x[i]))) * x[i + p.intermediate];
+    x[i] = value; copy[ulong(pos.y) * p.intermediate + pos.x] = half(value);
 }

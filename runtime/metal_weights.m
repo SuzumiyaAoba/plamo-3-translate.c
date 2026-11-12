@@ -436,6 +436,9 @@ void plamo_metal_encode_projection(struct plamo_metal *m, id<MTLComputeCommandEn
 int plamo_metal_preload_schema(struct plamo_metal *m) {
     for (const struct plamo_weight_spec *s = m->config.schema; s && s->name; ++s) {
         if (s->rank != 2 || !s->slot || !s->shape[0] || !s->shape[1]) continue;
+        // Both proposal models gather embeddings from the original CPU map.
+        // Only projection matrices need a separate Q4 GPU copy.
+        if (m->draft_quantized && !strcmp(s->name, "model.embed_tokens.weight")) continue;
         uint64_t row_bytes = s->shape[1] * 2;
         uint64_t rows = m->staging_bytes / row_bytes;
         if (rows >= 8) rows = rows / 8 * 8;

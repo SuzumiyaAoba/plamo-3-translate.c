@@ -129,6 +129,29 @@ static int prepare_rope(struct plamo_metal *m, struct rope_table *r, uint64_t po
     return 1;
 }
 
+static int prepare_verification_scratch(struct plamo_metal *m, const struct model *model) {
+    if (!m->texture_weights || m->config.working_weight_bytes <= 8 * 1024 * MIB) return 1;
+    for (uint64_t i = 0; i < model->count; ++i) {
+        const struct qkv *q = model->layers[i]->mixer->qkv;
+        struct decode_layer *d = &m->layers[i];
+        if (!plamo_metal_ensure_buffer(m, &d->proposal, PLAMO_VERIFY_MAX * (q->qh + 2 * q->kh) * q->dim * 4) ||
+            !plamo_metal_ensure_buffer(m, &d->proposal_rotated, PLAMO_VERIFY_MAX * q->kh * q->dim * 4)) return 0;
+    }
+    if (!plamo_metal_ensure_buffer(m, &m->logits, PLAMO_VERIFY_MAX * model->vocab * 4) ||
+        !plamo_metal_ensure_buffer(m, &m->scores, 16 * MIB)) return 0;
+    id<MTLCommandBuffer> command = [m->queue commandBuffer];
+    id<MTLBlitCommandEncoder> e = [command blitCommandEncoder];
+    if (!command || !e) return plamo_metal_problem(m, "cannot prepare verification scratch");
+    for (uint64_t i = 0; i < model->count; ++i) {
+        struct decode_layer *d = &m->layers[i];
+        [e fillBuffer:d->proposal range:NSMakeRange(0, d->proposal.length) value:0];
+        [e fillBuffer:d->proposal_rotated range:NSMakeRange(0, d->proposal_rotated.length) value:0];
+    }
+    [e fillBuffer:m->logits range:NSMakeRange(0, m->logits.length) value:0];
+    [e fillBuffer:m->scores range:NSMakeRange(0, m->scores.length) value:0];
+    return plamo_metal_complete(m, command, e);
+}
+
 int plamo_metal_prepare_model(struct plamo_metal *m, struct model *model) {
     if (m->config.memory == PLAMO_METAL_STREAM || m->model == model) return 1;
     if (!model || !model->count || model->count > 128 || !model->hidden || model->hidden > UINT32_MAX ||
@@ -182,8 +205,10 @@ int plamo_metal_prepare_model(struct plamo_metal *m, struct model *model) {
         if (!plamo_metal_ensure_buffer(m, &m->decode_norms, norm_bytes) ||
             !plamo_metal_ensure_buffer(m, &m->state, model->hidden * 4) ||
             !plamo_metal_ensure_buffer(m, &m->normalized, model->hidden * 4) ||
+            (m->draft_quantized && !plamo_metal_ensure_buffer(m, &m->draft_normalized, model->hidden * 2)) ||
             !plamo_metal_ensure_buffer(m, &m->branch, model->hidden * 4) ||
             !plamo_metal_ensure_buffer(m, &m->gate, gate * 4) ||
+            (m->draft_quantized && !plamo_metal_ensure_buffer(m, &m->draft_gate, gate)) ||
             !plamo_metal_ensure_buffer(m, &m->qkv, qkv * 4) ||
             !plamo_metal_ensure_buffer(m, &m->attention, attention * 4) ||
             !plamo_metal_ensure_buffer(m, &m->logits, model->vocab * 4) ||
@@ -197,6 +222,7 @@ int plamo_metal_prepare_model(struct plamo_metal *m, struct model *model) {
                 memcpy((char *)m->decode_norms.contents + offsets[j], weights[j], (size_t)((j < 4 ? model->hidden : l->mixer->qkv->dim) * 2));
         }
         memcpy((char *)m->decode_norms.contents + m->final_norm, model->norm, (size_t)(model->hidden * 2));
+        if (!prepare_verification_scratch(m, model)) { plamo_metal_release_decode(m); return 0; }
         m->model = model;
         return 1;
     }
@@ -205,11 +231,13 @@ int plamo_metal_prepare_model(struct plamo_metal *m, struct model *model) {
 static void encode_norm(struct plamo_metal *m, id<MTLComputeCommandEncoder> e, NSUInteger offset,
                          uint64_t hidden, uint64_t tokens, NSUInteger state_offset) {
     uint32_t p[] = {(uint32_t)hidden, 0, (uint32_t)tokens};
-    [e setComputePipelineState:m->norm];
+    int auxiliary = m->draft_quantized && tokens == 1;
+    [e setComputePipelineState:auxiliary ? m->draft_norm : m->norm];
     [e setBuffer:m->state offset:state_offset atIndex:0];
     [e setBuffer:m->decode_norms offset:offset atIndex:1];
     [e setBuffer:m->normalized offset:0 atIndex:2];
     [e setBytes:p length:sizeof p atIndex:3];
+    if (auxiliary) [e setBuffer:m->draft_normalized offset:0 atIndex:4];
     [e dispatchThreadgroups:MTLSizeMake(tokens, 1, 1) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
     ++m->info.dispatches;
 }
@@ -242,9 +270,11 @@ static void encode_layer_mlp(struct plamo_metal *m, id<MTLComputeCommandEncoder>
     encode_norm(m, e, d->mlp_pre, h, tokens, 0);
     plamo_metal_encode_projection(m, e, &d->gate, m->normalized, h, m->gate, 2 * mlp->intermediate, h, tokens);
     uint32_t params[] = {(uint32_t)h, (uint32_t)mlp->intermediate, (uint32_t)tokens};
-    [e setComputePipelineState:m->swiglu];
+    int auxiliary = m->draft_quantized && tokens == 1;
+    [e setComputePipelineState:auxiliary ? m->draft_swiglu : m->swiglu];
     [e setBuffer:m->gate offset:0 atIndex:0];
     [e setBytes:params length:sizeof params atIndex:1];
+    if (auxiliary) [e setBuffer:m->draft_gate offset:0 atIndex:2];
     [e dispatchThreadgroups:MTLSizeMake((mlp->intermediate + 127) / 128, tokens, 1) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
     ++m->info.dispatches;
     plamo_metal_encode_projection(m, e, &d->down, m->gate, 2 * mlp->intermediate, m->branch, h, mlp->intermediate, tokens);

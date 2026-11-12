@@ -39,11 +39,11 @@ python3 tools/server.py --backend metal --memory auto
 
 翻訳本体はすべての経路で活性値・演算・累積がFP32です。元BF16重みのFP32への展開は正確で、FP16への丸めや追加の量子化はありません。加算順序が異なるためGPUのハッシュはCPU基準と一致しません。元BF16の共有メモリ保持、精度、検証範囲は[Metalバックエンド](METAL.md)を参照してください。
 
-8BのMetal生成は、0.8Bのワーカーと重みがあれば、候補作成と8Bの一括検証を自動で使います。`plamo-download --model 0.8b --weights`で補助重みを用意できます。補助モデルだけはQ4で保持し、確定するトークンは元の8BがBF16重み・FP32演算で検証します。通常の逐次生成とはFP32の丸め差があります。`/health.speculative.enabled`・`block_tokens`で有効状態を確認でき、`PLAMO_SPECULATIVE=0`で無効化できます。補助モデルが利用できない場合や通信が切れた場合は通常生成へ戻ります。[設定・メモリ・数値検証](METAL.md#8bの候補検証による生成)を参照してください。
+8BのMetal生成は、0.8Bのワーカーと重みがあれば、候補作成と8Bの一括検証を自動で使います。`plamo-download --model 0.8b --weights`で補助重みを用意できます。補助モデルだけはQ4で保持し、確定するトークンは元の8BがBF16重み・FP32演算で検証します。通常の逐次生成とはFP32の丸め差があります。`/health.speculative.enabled`・`block_tokens`で有効状態と候補数の上限（既定16）を確認でき、`PLAMO_SPECULATIVE=0`で無効化できます。補助モデルが利用できない場合や通信が切れた場合は通常生成へ戻ります。[設定・メモリ・数値検証](METAL.md#8bの候補検証による生成)を参照してください。
 
 翻訳結果の`speculative`には`batches`・`consumed_tokens`・`proposed_tokens`・`accepted_tokens`・`draft_seconds`も返します。採用候補が複数あると1回の検証で複数トークンを確定するため、`timings.decode_steps`とコマンド数は一致しません。`decode_steps / decode_seconds`は補助処理、8B検証、KV反映を含む生成速度です。`compute.verification_batches`・`verified_tokens`・`committed_tokens`はGPU側の累積値です。
 
-`/health`の`compute`にバックエンド・GPU名・精度モード・`gpu_dispatches`・`command_buffers`・`fused_mlps`・`fused_decodes`・`cpu_fallbacks`・`errors`・累積`gpu_seconds`を返します。`fused_decodes`は全層の生成を一つのGPUコマンドで実行したステップ数です。`weight_storage`は`bf16`または`lossless-bf16`、`packed_weight_bytes`は圧縮して保持する元データ量です。`disk_cache_hits`・`disk_cache_weight_bytes`・`disk_cache_storage_bytes`は[事前作成した重みファイル](WEIGHT_CACHE.md)からの累積読み込み回数・元BF16換算の量・保存形式での量です。`allocated_bytes`はMetalの確保量、`recommended_working_set_bytes`はデバイスの推奨量、`residency_sets`はGPUリソースの常駐管理が有効かを示します。数値は起動時・翻訳終了時の通知で更新します。GPUの初期化・実行エラーの理由は`compute.note`に表示します。
+`/health`の`compute`にバックエンド・GPU名・精度モード・`gpu_dispatches`・`command_buffers`・`fused_mlps`・`fused_decodes`・`cpu_fallbacks`・`errors`・累積`gpu_seconds`を返します。`fused_decodes`は全層の生成を一つのGPUコマンドで実行したステップ数です。`weight_storage`は`bf16`・`lossless-bf16`・`texture-bf16`、`packed_weight_bytes`は圧縮して保持する元データ量です。`disk_cache_hits`・`disk_cache_weight_bytes`・`disk_cache_storage_bytes`は[事前作成した重みファイル](WEIGHT_CACHE.md)からの累積読み込み回数・元BF16換算の量・保存形式での量です。`allocated_bytes`はMetalの確保量、`recommended_working_set_bytes`はデバイスの推奨量、`residency_sets`はGPUリソースの常駐管理が有効かを示します。数値は起動時・翻訳終了時の通知で更新します。GPUの初期化・実行エラーの理由は`compute.note`に表示します。
 
 ## CPUスレッド
 

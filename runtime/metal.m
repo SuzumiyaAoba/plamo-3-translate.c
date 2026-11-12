@@ -67,6 +67,21 @@ void plamo_metal_encode_linear(struct plamo_metal *m, id<MTLComputeCommandEncode
         (uint32_t)rows, (uint32_t)columns, (uint32_t)tokens, (uint32_t)xs, (uint32_t)ys,
         !(offset % 8), packed ? (uint32_t)(offset / 2) : 0
     };
+    if (m->draft_quantized && packed == 2 && tokens == 1 && !(columns % 32) &&
+        !(params.weight_offset % 32) && !(xs % 4)) {
+        id<MTLBuffer> half_input = x == m->normalized ? m->draft_normalized : x == m->gate ? m->draft_gate : nil;
+        if (half_input) {
+            unsigned wide = rows >= 4096 && columns <= 4096, row_tile = wide ? 16 : 4;
+            [encoder setComputePipelineState:m->draft_dot[wide]];
+            [encoder setBuffer:(id<MTLBuffer>)w offset:0 atIndex:0];
+            [encoder setBuffer:half_input offset:0 atIndex:1];
+            [encoder setBuffer:y offset:output_offset atIndex:2];
+            [encoder setBytes:&params length:sizeof params atIndex:3];
+            [encoder dispatchThreadgroups:MTLSizeMake((rows + row_tile - 1) / row_tile, 1, 1)
+                  threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+            ++m->info.dispatches; return;
+        }
+    }
     if (packed == 2 && tokens == 1 && rows >= 4096 && columns <= 4096 && !(columns % 32) &&
         !(params.weight_offset % 32) && !(xs % 4)) {
         [encoder setComputePipelineState:m->q4_rows];
@@ -86,11 +101,13 @@ void plamo_metal_encode_linear(struct plamo_metal *m, id<MTLComputeCommandEncode
     int texture = packed == 3;
     unsigned direct_texture = texture && !offset && [(id<MTLTexture>)w width] * 4 == columns;
     int compact = m->verify_encoding && (!packed || texture) && tile_tokens <= 16;
-    int texture_split = texture && compact && batched && tile_tokens == 8 && rows <= 8192 && columns >= 128 && !(columns % 128);
+    int texture_split = texture && compact && batched && tile_tokens == 8 && rows <= 16384 && columns >= 128 && !(columns % 128);
     if (texture_split || (m->split_k && batched && tokens <= 32 && columns >= 8192 && !(columns % 128) && rows <= 4096)) {
         params.ys = (uint32_t)rows;
         id<MTLComputePipelineState> pipeline = texture && compact ? m->texture_split[direct_texture][tile_tokens / 8 - 1] :
             compact && tile_tokens == 16 ? m->compact_split : m->matmul_split[packed][tile_tokens / 8 - 1];
+        if (texture_split && tokens == 8 && !(rows % 32) && params.aligned_weights && !(xs % 4))
+            pipeline = m->full_texture[direct_texture];
         [encoder setComputePipelineState:pipeline];
         if (texture) [encoder setTexture:(id<MTLTexture>)w atIndex:0];
         else [encoder setBuffer:(id<MTLBuffer>)w offset:packed ? 0 : offset atIndex:0];
@@ -132,7 +149,7 @@ void plamo_metal_encode_linear(struct plamo_metal *m, id<MTLComputeCommandEncode
     ++m->info.dispatches;
 }
 
-int plamo_metal_complete(struct plamo_metal *m, id<MTLCommandBuffer> command, id<MTLComputeCommandEncoder> encoder) {
+int plamo_metal_complete(struct plamo_metal *m, id<MTLCommandBuffer> command, id<MTLCommandEncoder> encoder) {
     [encoder endEncoding];
     // Batch initial weight registrations and new activation buffers. No GPU
     // work is submitted before the complete set of changes is committed.
@@ -216,7 +233,9 @@ int plamo_metal_mlp(struct plamo_metal *m, const struct mlp *p, float *states, u
             !plamo_metal_resolve_projection(m, p->down, h, n, &down, 0)) return 0;
         if (!plamo_metal_ensure_buffer(m, &m->state, tokens * h * 4) ||
             !plamo_metal_ensure_buffer(m, &m->normalized, tokens * h * 4) ||
+            (m->draft_quantized && tokens == 1 && !plamo_metal_ensure_buffer(m, &m->draft_normalized, h * 2)) ||
             !plamo_metal_ensure_buffer(m, &m->gate, tokens * n * 8) ||
+            (m->draft_quantized && tokens == 1 && !plamo_metal_ensure_buffer(m, &m->draft_gate, n * 2)) ||
             !plamo_metal_ensure_buffer(m, &m->branch, tokens * h * 4) ||
             !plamo_metal_ensure_buffer(m, &m->norms, norm_stride + h * 2)) return 0;
         memcpy(m->state.contents, states, (size_t)(tokens * h * 4));
@@ -226,16 +245,19 @@ int plamo_metal_mlp(struct plamo_metal *m, const struct mlp *p, float *states, u
         id<MTLCommandBuffer> command = [m->queue commandBuffer];
         id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
         if (!command || !encoder) return plamo_metal_problem(m, "cannot create a fused Metal MLP command");
-        [encoder setComputePipelineState:m->norm];
+        int auxiliary = m->draft_quantized && tokens == 1;
+        [encoder setComputePipelineState:auxiliary ? m->draft_norm : m->norm];
         [encoder setBuffer:m->state offset:0 atIndex:0];
         [encoder setBuffer:m->norms offset:0 atIndex:1];
         [encoder setBuffer:m->normalized offset:0 atIndex:2];
         [encoder setBytes:&params length:sizeof params atIndex:3];
+        if (auxiliary) [encoder setBuffer:m->draft_normalized offset:0 atIndex:4];
         [encoder dispatchThreadgroups:MTLSizeMake(tokens, 1, 1) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
         plamo_metal_encode_projection(m, encoder, &gate, m->normalized, h, m->gate, 2 * n, h, tokens);
-        [encoder setComputePipelineState:m->swiglu];
+        [encoder setComputePipelineState:auxiliary ? m->draft_swiglu : m->swiglu];
         [encoder setBuffer:m->gate offset:0 atIndex:0];
         [encoder setBytes:&params length:sizeof params atIndex:1];
+        if (auxiliary) [encoder setBuffer:m->draft_gate offset:0 atIndex:2];
         [encoder dispatchThreadgroups:MTLSizeMake((n + 127) / 128, tokens, 1) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
         plamo_metal_encode_projection(m, encoder, &down, m->gate, 2 * n, m->branch, h, n, tokens);
         [encoder setComputePipelineState:m->residual];
@@ -294,6 +316,15 @@ struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *config, ch
         if (!m->device || !m->device.hasUnifiedMemory || ![m->device supportsFamily:MTLGPUFamilyApple7]) {
             snprintf(error, cap, "Metal requires an available Apple Silicon GPU"); goto fail;
         }
+        // Texture padding and both weight windows must fit before choosing a
+        // fixed full-model cache. Smaller devices retain adaptive lossless IO.
+        uint64_t preferred = config->working_weight_bytes;
+        uint64_t texture_margin = preferred / 64 + 256 * MIB;
+        if (!texture_weights && config->prefer_texture_weights && config->packing == PLAMO_PACK_AUTO &&
+            config->memory == PLAMO_METAL_AUTO && !m->private_weights && preferred &&
+            preferred <= m->device.recommendedMaxWorkingSetSize &&
+            texture_margin <= m->device.recommendedMaxWorkingSetSize - preferred)
+            m->texture_weights = 1;
         snprintf(m->info.device, sizeof m->info.device, "%s", m->device.name.UTF8String);
         snprintf(m->info.precision, sizeof m->info.precision, "fp32");
         NSError *failure = nil;
@@ -343,8 +374,12 @@ struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *config, ch
             fn = [library newFunctionWithName:[NSString stringWithFormat:@"plamo_matmul%u_split_compact_texture%@", (n + 1) * 8, suffix]];
             m->texture_split[direct][n] = [m->device newComputePipelineStateWithFunction:fn error:&failure]; [fn release];
         }
+        if (m->texture_weights) for (unsigned direct = 0; direct < 2; ++direct) {
+            fn = [library newFunctionWithName:direct ? @"plamo_matmul8_full_texture_direct" : @"plamo_matmul8_full_texture"];
+            m->full_texture[direct] = [m->device newComputePipelineStateWithFunction:fn error:&failure]; [fn release];
+        }
         const char *split_k = getenv("PLAMO_METAL_SPLIT_K");
-        m->split_k = split_k && !strcmp(split_k, "4");
+        m->split_k = split_k ? !strcmp(split_k, "4") : m->texture_weights && config->working_weight_bytes > 8 * 1024 * MIB;
         fn = [library newFunctionWithName:@"plamo_mlp_norm"];
         m->norm = [m->device newComputePipelineStateWithFunction:fn error:&failure];
         [fn release];
@@ -368,6 +403,14 @@ struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *config, ch
             m->quantize4 = [m->device newComputePipelineStateWithFunction:fn error:&failure]; [fn release];
             fn = [library newFunctionWithName:@"plamo_matvec_q4_rows"];
             m->q4_rows = [m->device newComputePipelineStateWithFunction:fn error:&failure]; [fn release];
+            for (unsigned i = 0; i < 2; ++i) {
+                fn = [library newFunctionWithName:i ? @"plamo_draft_dot8" : @"plamo_draft_dot32"];
+                m->draft_dot[i] = [m->device newComputePipelineStateWithFunction:fn error:&failure]; [fn release];
+            }
+            fn = [library newFunctionWithName:@"plamo_draft_norm"];
+            m->draft_norm = [m->device newComputePipelineStateWithFunction:fn error:&failure]; [fn release];
+            fn = [library newFunctionWithName:@"plamo_draft_swiglu"];
+            m->draft_swiglu = [m->device newComputePipelineStateWithFunction:fn error:&failure]; [fn release];
         }
         fn = [library newFunctionWithName:@"plamo_decode_keys"];
         m->decode_keys = [m->device newComputePipelineStateWithFunction:fn error:&failure]; [fn release];
@@ -425,6 +468,13 @@ struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *config, ch
                 p.staticThreadgroupMemoryLength <= m->device.maxThreadgroupMemoryLength &&
                 split.staticThreadgroupMemoryLength <= m->device.maxThreadgroupMemoryLength;
         }
+        id<MTLComputePipelineState> extra[] = {m->draft_dot[0], m->draft_dot[1], m->draft_norm, m->draft_swiglu};
+        if (m->draft_quantized) for (unsigned i = 0; i < 4; ++i)
+            pipelines = pipelines && extra[i] && extra[i].threadExecutionWidth == 32 && extra[i].maxTotalThreadsPerThreadgroup >= 128;
+        if (m->texture_weights) for (unsigned i = 0; i < 2; ++i)
+            pipelines = pipelines && m->full_texture[i] && m->full_texture[i].threadExecutionWidth == 32 &&
+                m->full_texture[i].maxTotalThreadsPerThreadgroup >= 128 &&
+                m->full_texture[i].staticThreadgroupMemoryLength <= m->device.maxThreadgroupMemoryLength;
         if (!pipelines) {
             snprintf(error, cap, "Metal compute pipeline is unavailable: %s", failure ? failure.localizedDescription.UTF8String : "unsupported limits"); goto fail;
         }
@@ -439,7 +489,8 @@ struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *config, ch
         uint64_t available = config->available();
         uint64_t spare = available > config->reserve ? available - config->reserve : 0;
         m->staging_bytes = spare / 8;
-        if (m->staging_bytes > 64 * MIB) m->staging_bytes = 64 * MIB;
+        uint64_t window = m->texture_weights && config->working_weight_bytes > 8 * 1024 * MIB ? 128 * MIB : 64 * MIB;
+        if (m->staging_bytes > window) m->staging_bytes = window;
         m->staging_bytes = m->staging_bytes / 16384 * 16384;
         if (m->staging_bytes < MIB) m->staging_bytes = MIB;
         uint64_t device_budget = m->device.recommendedMaxWorkingSetSize;
@@ -576,6 +627,9 @@ void plamo_metal_close(struct plamo_metal *m) {
         [m->texture_compact[d][n] release]; [m->texture_split[d][n] release];
     }
     [m->q4_rows release];
+    [m->draft_dot[0] release]; [m->draft_dot[1] release]; [m->draft_norm release]; [m->draft_swiglu release];
+    [m->draft_normalized release]; [m->draft_gate release];
+    [m->full_texture[0] release]; [m->full_texture[1] release];
     [m->queue release]; [m->device release];
     plamo_disk_cache_close(m->disk_cache);
     for (size_t i = 0; i < m->config.count; ++i)
