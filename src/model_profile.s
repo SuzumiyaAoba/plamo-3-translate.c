@@ -4,8 +4,8 @@
 .globl _plamo_weight_file_count
 _plamo_weight_file_count: .quad 4
 .globl _plamo_weight_paths
-_plamo_weight_paths: .quad Lpath0,Lpath1,Lpath2,Lpath3
-.section __TEXT,__const
+_plamo_weight_paths: .quad Lpath0, Lpath1, Lpath2, Lpath3
+.section __TEXT, __const
 .globl _plamo_vocab_path
 .globl _plamo_model_name
 .globl _plamo_model_repository

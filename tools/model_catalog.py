@@ -1,4 +1,5 @@
 """Pinned model profiles shared by generation, download and serving."""
+
 from dataclasses import dataclass
 import json
 import os
@@ -41,7 +42,11 @@ class Profile:
             return Path(os.environ["PLAMO_DATA_DIR"])
         if not cache:
             return Path.cwd()
-        base = Path(os.environ["XDG_DATA_HOME"]) if os.environ.get("XDG_DATA_HOME") else Path.home() / ".local/share"
+        base = (
+            Path(os.environ["XDG_DATA_HOME"])
+            if os.environ.get("XDG_DATA_HOME")
+            else Path.home() / ".local/share"
+        )
         return base / self.name
 
     def build_directory(self, root):
@@ -52,10 +57,17 @@ def profile(size=DEFAULT_MODEL):
     if size not in MODELS:
         raise ValueError(f"unknown model {size!r}; choose {', '.join(MODELS)}")
     directory = PROFILES / size
-    return Profile(size, json.loads((directory / "config.json").read_text()),
-                   json.loads((directory / "manifest.json").read_text()))
+    return Profile(
+        size,
+        json.loads((directory / "config.json").read_text()),
+        json.loads((directory / "manifest.json").read_text()),
+    )
 
 
 def add_model_argument(parser):
-    parser.add_argument("--model", choices=MODELS, default=os.environ.get("PLAMO_MODEL", DEFAULT_MODEL),
-                        help="original BF16 checkpoint (default: PLAMO_MODEL or 8b)")
+    parser.add_argument(
+        "--model",
+        choices=MODELS,
+        default=os.environ.get("PLAMO_MODEL", DEFAULT_MODEL),
+        help="original BF16 checkpoint (default: PLAMO_MODEL or 8b)",
+    )

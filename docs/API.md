@@ -19,6 +19,15 @@ make all
 python3 tools/server.py --data-dir "$PWD" --memory auto
 ```
 
+手元のソース変更を使う場合は、リポジトリ内で次を実行します。GitHub URLを指定した`nix run`は公開済みのソースを使います。`make`で作る`build/`と、Nixの`result/`は別の実行ファイルです。
+
+```sh
+nix build
+./result/bin/plamo-server --model 8b --backend metal --memory auto --port 8000
+```
+
+`nix flake check`は検証を行いますが、`result`のリンクは更新しません。`result`を使う場合は`nix build`で更新し、起動済みのAPIも再起動してください。`nix run .#serve -- --model 8b --backend metal --memory auto`でも現在のソースから起動できます。
+
 別のターミナルから確認します。読み込み中・起動失敗は503、利用可能なら200です。
 
 ```sh
@@ -117,6 +126,9 @@ Apple M2・24 GiBで、`Hello.`を起動完了直後に送り、初回と2回目
 さらに無損失キャッシュ、正規化の並列集計、生成全体のGPU化後は、ウォームアップなしの初回トークンが2Bで0.291→0.202秒、8Bで1.374→0.660秒でした。2Bの起動は1.156→1.132秒、8Bは6.640→8.445秒です。8Bの変更前後は起動時の空きと保持量が異なり、変更後は計算用16.18 GBを約12.30 GBのキャッシュに保持して大行列の読み込みを省けました。3回の中央値と各回の条件は[追加最適化の測定結果](benchmarks/decode.json)に記録しています。
 
 ## 翻訳
+
+TTFT（最初の翻訳文字が届くまでの時間）を確認するときは、下のストリーミング例の`"stream":true`と`curl -N`を使います。`stream`を省略したJSON応答は、全文生成後に返ります。その応答を待つ時間と、内部の`timings.first_token_seconds`は異なります。クライアントもSSEを逐次読み取る必要があります。
+
 
 ```sh
 curl http://127.0.0.1:8000/translate \

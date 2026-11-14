@@ -1,4 +1,5 @@
 """Bounded JSONL events and binary requests for the private native worker pipe."""
+
 import json
 import struct
 import subprocess
@@ -50,5 +51,11 @@ def check_memory(memory):
     if memory["mode"] == "adaptive":
         assert 0 <= memory["preloaded_weight_bytes"] <= memory["weight_bytes"], memory
         assert 0 < memory["staging_bytes"] <= 128 * 1024 * 1024, memory
-        assert memory["staging_bytes"] <= memory["budget_bytes"] <= memory["max_budget_bytes"], memory
-        assert memory.get("cached_storage_bytes", memory["cached_weight_bytes"]) + memory["staging_bytes"] <= memory["budget_bytes"], memory
+        assert memory["staging_bytes"] <= memory["budget_bytes"] <= memory["max_budget_bytes"], (
+            memory
+        )
+        assert (
+            memory.get("cached_storage_bytes", memory["cached_weight_bytes"])
+            + memory["staging_bytes"]
+            <= memory["budget_bytes"]
+        ), memory

@@ -1,4 +1,5 @@
 """Offline checks for atomic, pinned model downloads."""
+
 import hashlib
 import io
 from pathlib import Path
@@ -16,10 +17,17 @@ class DownloadTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
         self.payload = b"original upstream bytes\x00\xff"
-        self.expected = {"size": len(self.payload), "sha256": hashlib.sha256(self.payload).hexdigest()}
+        self.expected = {
+            "size": len(self.payload),
+            "sha256": hashlib.sha256(self.payload).hexdigest(),
+        }
 
     def fetch(self, name, payload=None, **kwargs):
-        with patch.object(download.urllib.request, "urlopen", return_value=io.BytesIO(self.payload if payload is None else payload)) as opener:
+        with patch.object(
+            download.urllib.request,
+            "urlopen",
+            return_value=io.BytesIO(self.payload if payload is None else payload),
+        ) as opener:
             download.download_file(name, self.directory, self.expected, **kwargs)
         return opener
 
@@ -33,8 +41,10 @@ class DownloadTests(unittest.TestCase):
         for size in MODELS:
             with self.subTest(model=size):
                 p = profile(size)
-                opener = self.fetch('fixture-' + size, model_profile=p)
-                self.assertIn('/' + p.repository + '/resolve/' + p.revision + '/', opener.call_args.args[0])
+                opener = self.fetch("fixture-" + size, model_profile=p)
+                self.assertIn(
+                    "/" + p.repository + "/resolve/" + p.revision + "/", opener.call_args.args[0]
+                )
 
     def test_cache_checked_without_network(self):
         target = self.directory / "tokenizer.jsonl"
@@ -76,7 +86,10 @@ class DownloadTests(unittest.TestCase):
     def test_another_revision_is_rejected_before_download(self):
         marker = self.directory / "REVISION"
         marker.write_text("another-revision\n")
-        with patch("sys.argv", ["download.py", "--directory", str(self.directory)]), patch.object(download.urllib.request, "urlopen") as opener:
+        with (
+            patch("sys.argv", ["download.py", "--directory", str(self.directory)]),
+            patch.object(download.urllib.request, "urlopen") as opener,
+        ):
             with self.assertRaises(SystemExit) as error:
                 download.main()
         self.assertEqual(error.exception.code, 1)

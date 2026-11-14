@@ -6,7 +6,12 @@
 #include "metal.h"
 
 enum plamo_memory_mode { PLAMO_MEMORY_AUTO, PLAMO_MEMORY_RESIDENT, PLAMO_MEMORY_STREAM };
-enum plamo_backend { PLAMO_BACKEND_AUTO, PLAMO_BACKEND_CPU, PLAMO_BACKEND_METAL, PLAMO_BACKEND_METAL_FP32 };
+enum plamo_backend {
+    PLAMO_BACKEND_AUTO,
+    PLAMO_BACKEND_CPU,
+    PLAMO_BACKEND_METAL,
+    PLAMO_BACKEND_METAL_FP32
+};
 struct plamo_engine;
 struct plamo_engine_info {
     const char *memory_mode;
@@ -40,8 +45,9 @@ struct plamo_callbacks {
 };
 
 /* One worker owns one engine for its process lifetime. Requests are serialized. */
-struct plamo_engine *plamo_engine_open(enum plamo_memory_mode, int tokenizer_only, unsigned threads, enum plamo_backend,
-                                     struct plamo_engine_info *, char *, size_t);
+struct plamo_engine *plamo_engine_open(enum plamo_memory_mode, int tokenizer_only, unsigned threads,
+                                       enum plamo_backend, struct plamo_engine_info *, char *,
+                                       size_t);
 void plamo_engine_get_info(struct plamo_engine *, struct plamo_engine_info *);
 void plamo_engine_maintain_memory(struct plamo_engine *);
 /* API startup: fill the adaptive cache, prepare GPU resources and snapshot
@@ -50,8 +56,8 @@ void plamo_engine_maintain_memory(struct plamo_engine *);
    prefix snapshots and prepare only their weights as part of the request. */
 int plamo_engine_prepare(struct plamo_engine *, char *, size_t);
 uint64_t plamo_engine_tokenize(struct plamo_engine *, const char *, unsigned direction,
-                              const uint32_t **ids, char *, size_t);
+                               const uint32_t **ids, char *, size_t);
 int plamo_engine_translate(struct plamo_engine *, const char *, unsigned direction,
-                          unsigned max_tokens, const struct plamo_callbacks *,
-                          struct plamo_result *, char *, size_t);
+                           unsigned max_tokens, const struct plamo_callbacks *,
+                           struct plamo_result *, char *, size_t);
 #endif

@@ -73,6 +73,15 @@ PLAMO_DATA_DIR="$PWD" nix run . -- -j 'Hello.'
 
 ## 常駐API
 
+手元の変更を使う場合は、リポジトリ内でビルドして起動します。`build/`と`result/`は別の実行ファイルです。`make`や`nix flake check`の後に`result/`を使う場合も、`nix build`とAPIの再起動が必要です。
+
+```sh
+nix build
+./result/bin/plamo-server --model 8b --backend metal --memory auto --port 8000
+```
+
+公開済みのソースから起動する場合:
+
 ```sh
 nix run github:SuzumiyaAoba/plamo-3-translate.c#serve -- --model 2b --memory auto --port 8000
 ```
@@ -94,11 +103,11 @@ CLI・API は既定で利用可能なMetal GPUを使い、初期化できない�
 
 実際のバックエンド・GPU名と、メモリモード（`auto`は`adaptive`）・領域の上限・保持中の重み・読み込み領域のバイト数は`/health`に表示します。`load_seconds`は先読みを含む起動時間、`preload_seconds`は追加の準備時間です。`memory.preloaded_weight_bytes`は起動時の先読み量、`cached_weight_bytes`は元BF16換算の保持量、`cached_storage_bytes`は実際のキャッシュ領域です。I/Oを減らせる量は保持できる重みに依存します。APIの制約、ストリーミング、計測結果は[常駐APIの説明](docs/API.md)を参照してください。APIの制御層はC・Objective-CとPython標準ライブラリ、CPUカーネルはアセンブリ、GPUカーネルはMetalです。
 
-ready後の初回応答も最適化しています。M2・24 GiBの短文では、最初のトークンまで0.8Bが0.093→0.029秒、2Bが0.217→0.100秒、8Bが0.657→0.404秒でした（3回の中央値、前後で保持形式・保持量を統一）。入力処理全体のGPU化と固定接頭KVの再利用による改善で、固定接頭の計算は起動時間に含みます。[条件・長文・精度検証](docs/METAL.md)を参照してください。
+8Bの常駐APIは、最初の翻訳文字までの時間（TTFT）を短縮しました。M2・24 GiBの実HTTP/SSEで、入力長に合わせたFP32行列タイルの追加改善により、最終パッケージの81入力トークンは **0.643～0.674秒**、128トークンは **0.921～0.960秒**でした（初回を含む各6要求、毎回64トークン生成）。237/455トークンは約1.8秒／3.3秒で、**長文の1秒目標は未達です。** 元のBF16とFP32演算を保ち、18条件の通常生成では全状態・logitsが変更前とビット単位で一致しています。以前には短文でも0.78～1.84秒の遅延を観測しており、その原因の解消は確認できていません。起動時間は別計測で、入力長や他アプリの負荷によって時間は変わります。[条件・再現コマンド](docs/METAL.md#8b常駐apiの最初の翻訳文字)と[全測定データ](docs/benchmarks/ttft-8b.json)を参照してください。
 
 CPUバックエンドの大きな行列演算は、既定で性能コア数に合わせて並列実行します。`--threads 4`でスレッド数を指定でき、`--threads 1`で逐次実行になります。実際の数は`/health`の`threads`に表示します。2Bの完全常駐では、従来の1スレッドに対し入力21トークンの処理が1.52秒→0.42秒、生成1ステップが0.24秒→0.11秒でした（3回の中央値）。CPU最適化前後ではBF16重みと演算結果のハッシュが一致しています。[LM Studioとの速度差・比較条件](docs/OPTIMIZATION.md#lm-studioとの速度差とcpu並列化)を参照してください。
 
-8Bは、元BF16を保持する整数テクスチャと、0.8Bによる候補作成・8Bの一括検証を組み合わせます。M2・24 GiBの通常設定の実APIで、英→日 **21.695 tokens/s**、日→英 **21.041 tokens/s**（各3回の中央値）を確認しました。ready直後から各64生成トークンを測り、全6要求で20 tokens/sを超えました（最小20.719）。SSE受信時刻でも20超を確認し、従来の8Bトークン列・翻訳文と一致しました。起動・入力処理は生成速度から除外し、この測定の起動時間は11.11秒です。8B本体は元のBF16重み・FP32演算を維持し、補助モデルだけをQ4・FP16積和で高速化します。通常生成とのFP32の丸め差はあります。[導入・精度検証](docs/METAL.md#8bの候補検証による生成)と[測定条件・全結果](docs/benchmarks/speculative.json)を参照してください。熱制限や他のアプリによって速度は変わります。補助重みは`plamo-download --model 0.8b --weights`で用意でき、無効化は`PLAMO_SPECULATIVE=0`です。
+Metalの8Bでは、0.8Bワーカーが作った候補を8Bで検証し、8Bのgreedy選択に一致する接頭だけを採用します。81/128入力トークン・各64生成トークンの測定では、最初の文字以降の生成速度は **18.6～21.3 tokens/s**でした。補助モデルの入力処理は最初の8Bトークンを送信した後に行い、その時間も生成時間に含みます。8B本体は元のBF16重み・FP32演算を維持し、補助モデルだけをQ4・FP16積和で高速化します。通常生成とのFP32の丸め差はあります。[導入・精度検証](docs/METAL.md#8bの候補検証による生成)を参照してください。補助重みは`plamo-download --model 0.8b --weights`で用意でき、無効化は`PLAMO_SPECULATIVE=0`です。
 
 ## Nixを使わずに実行
 
@@ -144,6 +153,15 @@ make models
 - 特殊トークン・連続文字の境界前処理、UTF-8 復号
 
 キャッシュと作業領域は匿名 mmap で仮想領域を確保します。全重みの FP32 コピーは作りません。RoPE の周波数などの固定モデル定数と記述子は `tools/profiles/SIZE/config.json` から生成しています。`docs/config.json` は従来の8B設定です。8Bの起動時の圧縮を省くには、`python3 tools/prepare_weights.py --model 8b`で[実行用重みファイル](docs/WEIGHT_CACHE.md)を事前作成できます。元の全BF16ビットを保持します。
+
+## コード整形
+
+```sh
+nix fmt             # コード全体を整形
+make format-check   # 作業ツリーを変更せずに整形状態を検査
+```
+
+`treefmt`からclang-format、Ruff、shfmt、nixfmt、mbake、Taplo、yamlfmtとAArch64用の整形処理を実行します。バージョンは既存の`flake.lock`で固定し、`nix develop`でも同じツールを使えます。C・Objective-C・Metal・Python・アセンブリ・シェル・Nix・Makefile・TOML・YAMLが対象です。モデルの設定・マニフェストと測定結果のJSONはデータとして保持します。生成コードも同じ書式で再生成し、`nix flake check`とCIで整形状態を検査します。
 
 ## 検証
 

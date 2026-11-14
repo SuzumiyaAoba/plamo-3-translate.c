@@ -5,7 +5,12 @@
 
 enum plamo_metal_memory { PLAMO_METAL_AUTO, PLAMO_METAL_RESIDENT, PLAMO_METAL_STREAM };
 enum plamo_metal_precision { PLAMO_METAL_FP32 };
-enum plamo_metal_packing { PLAMO_PACK_AUTO, PLAMO_PACK_RAW, PLAMO_PACK_LOSSLESS, PLAMO_PACK_DRAFT_Q4 };
+enum plamo_metal_packing {
+    PLAMO_PACK_AUTO,
+    PLAMO_PACK_RAW,
+    PLAMO_PACK_LOSSLESS,
+    PLAMO_PACK_DRAFT_Q4
+};
 struct plamo_metal_config {
     enum plamo_metal_memory memory;
     enum plamo_metal_precision precision;
@@ -24,7 +29,8 @@ struct plamo_metal_config {
 struct plamo_metal_info {
     char device[128], precision[16], weight_storage[24], note[256];
     struct plamo_weight_cache_info cache;
-    uint64_t dispatches, command_buffers, fused_mlps, fused_decodes, fused_prefills, cpu_fallbacks, errors;
+    uint64_t dispatches, command_buffers, fused_mlps, fused_decodes, fused_prefills, cpu_fallbacks,
+        errors;
     uint64_t allocated_bytes, recommended_working_set_bytes;
     uint64_t packed_weight_bytes;
     uint64_t weight_heap_bytes;
@@ -60,14 +66,18 @@ int plamo_metal_prepare_model(struct plamo_metal *, struct model *);
    On success the ordinary CPU state, logits and KV remain immediately usable. */
 int plamo_metal_forward(struct plamo_metal *, struct model *, uint64_t token);
 /* Complete layer-major prompt processing with one GPU submission. Shares the
-   canonical KV and returns every prompt state plus final state/logits. Like
-   forward, 0 declines without state changes and -1 must not be retried. */
-int plamo_metal_prefill(struct plamo_metal *, struct model *, const uint32_t *, uint64_t tokens, float *states);
+   canonical KV and returns every prompt state plus final state/logits.
+   With states == NULL, only the final state/logits are requested, allowing
+   unused final-layer outputs to be omitted. Like forward, 0 declines without
+   state changes and -1 must not be retried. */
+int plamo_metal_prefill(struct plamo_metal *, struct model *, const uint32_t *, uint64_t tokens,
+                        float *states);
 enum { PLAMO_VERIFY_MAX = 16 };
 /* Verify a candidate block without changing state/logits/raw KV/counts. A
    derived rotation cache may be refreshed. Commit a verified prefix in order;
    a new forward/prefill invalidates the remaining candidates. */
-int plamo_metal_verify(struct plamo_metal *, struct model *, const uint32_t *, uint64_t tokens, uint32_t *next);
+int plamo_metal_verify(struct plamo_metal *, struct model *, const uint32_t *, uint64_t tokens,
+                       uint32_t *next);
 int plamo_metal_commit(struct plamo_metal *, struct model *, uint64_t index);
 /* Synchronous dense projection; 0 leaves the caller free to use its CPU kernel.
    Input/output must not overlap. Arbitrary FP32 strides and BF16 row/column

@@ -4,18 +4,74 @@
 #include <stdint.h>
 
 /* Layouts shared with the assembly ABI and optional GPU projections. */
-struct qkv { const float *input; const uint16_t *weight, *qn, *kn; float *out; uint64_t hidden, qh, kh, dim; };
-struct cache { float *k, *v; uint64_t capacity, count, width, sliding; };
-struct rotation { struct cache *cache; float *out; const float *freq; float *cos, *sin; uint64_t heads, dim, processed_count, scale_bits; };
-struct gqa { float *q, *k, *v, *out, *scores; uint64_t tokens, dim, qh, kh; };
-struct mixer { struct qkv *qkv; struct cache *cache; struct rotation *rotation; struct gqa *gqa; const uint16_t *weight; float *out; uint64_t hidden; };
+struct qkv {
+    const float *input;
+    const uint16_t *weight, *qn, *kn;
+    float *out;
+    uint64_t hidden, qh, kh, dim;
+};
+struct cache {
+    float *k, *v;
+    uint64_t capacity, count, width, sliding;
+};
+struct rotation {
+    struct cache *cache;
+    float *out;
+    const float *freq;
+    float *cos, *sin;
+    uint64_t heads, dim, processed_count, scale_bits;
+};
+struct gqa {
+    float *q, *k, *v, *out, *scores;
+    uint64_t tokens, dim, qh, kh;
+};
+struct mixer {
+    struct qkv *qkv;
+    struct cache *cache;
+    struct rotation *rotation;
+    struct gqa *gqa;
+    const uint16_t *weight;
+    float *out;
+    uint64_t hidden;
+};
 /* Only state is a result. normalized/branch/scratch are reusable CPU workspace;
    a compute backend can use private workspace instead. */
-struct mlp { float *state; const uint16_t *pre, *post, *gu, *down; float *normalized, *branch, *scratch; uint64_t hidden, intermediate; };
-struct layer { float *state; const uint16_t *pre, *post; float *normalized, *branch; struct mixer *mixer; struct mlp *mlp; uint64_t hidden; };
-struct model { const uint16_t *embedding; uint64_t vocab, hidden; float *state; struct layer **layers; uint64_t count; float *scales; const uint16_t *norm; float *normalized; const uint16_t *head; float *logits; };
-struct plamo_mapping { void *base; uint64_t bytes; };
-struct plamo_weight_spec { const char *name; uint64_t rank; const uint64_t *shape; void **slot; };
+struct mlp {
+    float *state;
+    const uint16_t *pre, *post, *gu, *down;
+    float *normalized, *branch, *scratch;
+    uint64_t hidden, intermediate;
+};
+struct layer {
+    float *state;
+    const uint16_t *pre, *post;
+    float *normalized, *branch;
+    struct mixer *mixer;
+    struct mlp *mlp;
+    uint64_t hidden;
+};
+struct model {
+    const uint16_t *embedding;
+    uint64_t vocab, hidden;
+    float *state;
+    struct layer **layers;
+    uint64_t count;
+    float *scales;
+    const uint16_t *norm;
+    float *normalized;
+    const uint16_t *head;
+    float *logits;
+};
+struct plamo_mapping {
+    void *base;
+    uint64_t bytes;
+};
+struct plamo_weight_spec {
+    const char *name;
+    uint64_t rank;
+    const uint64_t *shape;
+    void **slot;
+};
 
 _Static_assert(sizeof(struct model) == 88, "assembly model ABI");
 _Static_assert(sizeof(struct qkv) == 72, "assembly QKV ABI");
@@ -34,7 +90,8 @@ enum { PLAMO_MAX_WEIGHT_FILES = 64 };
 extern struct plamo_mapping plamo_weight_mappings[PLAMO_MAX_WEIGHT_FILES];
 extern int64_t plamo_weight_fds[PLAMO_MAX_WEIGHT_FILES];
 extern uint64_t plamo_weight_mapping_count, plamo_weight_file_count;
-extern const char plamo_vocab_path[], plamo_model_name[], plamo_model_repository[], plamo_model_revision[];
+extern const char plamo_vocab_path[], plamo_model_name[], plamo_model_repository[],
+    plamo_model_revision[];
 extern struct plamo_weight_spec plamo_weight_schema[];
 extern uint64_t plamo_model_patches[], plamo_io_policy, plamo_io_stats[4];
 /* Optional worker-owned provider; zero leaves the standalone syscall path. */

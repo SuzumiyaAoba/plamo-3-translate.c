@@ -25,6 +25,9 @@ select_model() {
             relative_directory=models/31b
             weight_files=(model-00001-of-00014.safetensors model-00002-of-00014.safetensors model-00003-of-00014.safetensors model-00004-of-00014.safetensors model-00005-of-00014.safetensors model-00006-of-00014.safetensors model-00007-of-00014.safetensors model-00008-of-00014.safetensors model-00009-of-00014.safetensors model-00010-of-00014.safetensors model-00011-of-00014.safetensors model-00012-of-00014.safetensors model-00013-of-00014.safetensors model-00014-of-00014.safetensors)
             ;;
-        *) printf 'plamo: choose --model 0.8b, 2b, 8b, or 31b\n' >&2; return 2 ;;
+        *)
+            printf 'plamo: choose --model 0.8b, 2b, 8b, or 31b\n' >&2
+            return 2
+            ;;
     esac
 }

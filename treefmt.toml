@@ -1,0 +1,50 @@
+# Model profiles and benchmark JSON are pinned data, not source code.
+[global]
+excludes = [
+  "build/**",
+  "models/**",
+  ".venv/**",
+  ".git/**",
+  ".direnv/**",
+  "result/**",
+  "result-*/**",
+  "**/__pycache__/**",
+]
+
+[formatter.clang]
+command = "clang-format"
+options = ["-i"]
+includes = ["*.c", "*.h", "*.m", "*.metal"]
+
+[formatter.python]
+command = "ruff"
+options = ["format"]
+includes = ["*.py"]
+
+[formatter.assembly]
+command = "python3"
+options = ["tools/format_assembly.py"]
+includes = ["*.s"]
+
+[formatter.shell]
+command = "shfmt"
+options = ["-w", "-ln", "bash", "-i", "4", "-ci"]
+includes = ["*.sh", "*.sh.in"]
+
+[formatter.make]
+command = "mbake"
+options = ["format", "--config", ".bake.toml"]
+includes = ["Makefile", "*/Makefile"]
+
+[formatter.nix]
+command = "nixfmt"
+includes = ["*.nix"]
+
+[formatter.toml]
+command = "taplo"
+options = ["fmt"]
+includes = ["*.toml"]
+
+[formatter.yaml]
+command = "yamlfmt"
+includes = ["*.yml", "*.yaml", ".clang-format"]

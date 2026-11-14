@@ -10,7 +10,11 @@
 #define ROW_GROUP 24
 #define MIN_OPERATIONS (UINT64_C(256) * 1024)
 
-struct worker { struct plamo_parallel *pool; pthread_t thread; unsigned index; };
+struct worker {
+    struct plamo_parallel *pool;
+    pthread_t thread;
+    unsigned index;
+};
 struct plamo_parallel {
     pthread_mutex_t mutex;
     pthread_cond_t start, done;
@@ -21,10 +25,11 @@ struct plamo_parallel {
     int stopping, matvec;
 };
 
-
 static void compute(const struct plamo_matmul *m, int matvec) {
-    if (matvec) plamo_bf16_matvec_serial(m->weights, m->input, m->output, m->rows, m->columns);
-    else plamo_bf16_matmul_core(m);
+    if (matvec)
+        plamo_bf16_matvec_serial(m->weights, m->input, m->output, m->rows, m->columns);
+    else
+        plamo_bf16_matmul_core(m);
 }
 
 static void slice(struct plamo_parallel *p, unsigned index) {
@@ -32,8 +37,10 @@ static void slice(struct plamo_parallel *p, unsigned index) {
     uint64_t groups = (m.rows + ROW_GROUP - 1) / ROW_GROUP;
     uint64_t first = groups * index / p->threads * ROW_GROUP;
     uint64_t end = groups * (index + 1) / p->threads * ROW_GROUP;
-    if (end > m.rows) end = m.rows;
-    if (first >= end) return;
+    if (end > m.rows)
+        end = m.rows;
+    if (first >= end)
+        return;
     m.weights += first * m.columns;
     m.output += first;
     m.rows = end - first;
@@ -47,13 +54,16 @@ static void *worker_main(void *context) {
     uint64_t seen = 0;
     pthread_mutex_lock(&p->mutex);
     for (;;) {
-        while (!p->stopping && seen == p->generation) pthread_cond_wait(&p->start, &p->mutex);
-        if (p->stopping) break;
+        while (!p->stopping && seen == p->generation)
+            pthread_cond_wait(&p->start, &p->mutex);
+        if (p->stopping)
+            break;
         seen = p->generation;
         pthread_mutex_unlock(&p->mutex);
         slice(p, w->index);
         pthread_mutex_lock(&p->mutex);
-        if (!--p->pending) pthread_cond_signal(&p->done);
+        if (!--p->pending)
+            pthread_cond_signal(&p->done);
     }
     pthread_mutex_unlock(&p->mutex);
     return NULL;
@@ -76,16 +86,20 @@ static void run(struct plamo_parallel *p, const struct plamo_matmul *m, int matv
     pthread_mutex_unlock(&p->mutex);
     slice(p, 0);
     pthread_mutex_lock(&p->mutex);
-    while (p->pending) pthread_cond_wait(&p->done, &p->mutex);
+    while (p->pending)
+        pthread_cond_wait(&p->done, &p->mutex);
     pthread_mutex_unlock(&p->mutex);
 }
 
-static void matvec(const uint16_t *w, const float *x, float *y, uint64_t rows, uint64_t columns, void *context) {
+static void matvec(const uint16_t *w, const float *x, float *y, uint64_t rows, uint64_t columns,
+                   void *context) {
     struct plamo_matmul m = {w, x, y, rows, columns, 1, columns, rows};
     run(context, &m, 1);
 }
 
-static void matmul(const struct plamo_matmul *m, void *context) { run(context, m, 0); }
+static void matmul(const struct plamo_matmul *m, void *context) {
+    run(context, m, 0);
+}
 
 static unsigned automatic_threads(void) {
     unsigned cores = 0;
@@ -98,35 +112,58 @@ static unsigned automatic_threads(void) {
 }
 
 struct plamo_parallel *plamo_parallel_open(unsigned threads) {
-    if (plamo_compute_context) return NULL;
-    if (!threads) threads = automatic_threads();
-    if (threads > MAX_THREADS) threads = MAX_THREADS;
-    if (threads <= 1) return NULL;
+    if (plamo_compute_context)
+        return NULL;
+    if (!threads)
+        threads = automatic_threads();
+    if (threads > MAX_THREADS)
+        threads = MAX_THREADS;
+    if (threads <= 1)
+        return NULL;
     struct plamo_parallel *p = calloc(1, sizeof *p);
-    if (!p) return NULL;
-    if (pthread_mutex_init(&p->mutex, NULL)) { free(p); return NULL; }
-    if (pthread_cond_init(&p->start, NULL)) { pthread_mutex_destroy(&p->mutex); free(p); return NULL; }
+    if (!p)
+        return NULL;
+    if (pthread_mutex_init(&p->mutex, NULL)) {
+        free(p);
+        return NULL;
+    }
+    if (pthread_cond_init(&p->start, NULL)) {
+        pthread_mutex_destroy(&p->mutex);
+        free(p);
+        return NULL;
+    }
     if (pthread_cond_init(&p->done, NULL)) {
-        pthread_cond_destroy(&p->start); pthread_mutex_destroy(&p->mutex); free(p); return NULL;
+        pthread_cond_destroy(&p->start);
+        pthread_mutex_destroy(&p->mutex);
+        free(p);
+        return NULL;
     }
     p->threads = 1;
     for (unsigned i = 1; i < threads; ++i) {
         struct worker *w = &p->workers[i - 1];
-        w->pool = p; w->index = i;
-        if (pthread_create(&w->thread, NULL, worker_main, w)) break;
+        w->pool = p;
+        w->index = i;
+        if (pthread_create(&w->thread, NULL, worker_main, w))
+            break;
         ++p->threads;
     }
-    if (p->threads == 1) { plamo_parallel_close(p); return NULL; }
+    if (p->threads == 1) {
+        plamo_parallel_close(p);
+        return NULL;
+    }
     plamo_compute_context = p;
     plamo_matvec_kernel = matvec;
     plamo_matmul_kernel = matmul;
     return p;
 }
 
-unsigned plamo_parallel_threads(const struct plamo_parallel *p) { return p ? p->threads : 1; }
+unsigned plamo_parallel_threads(const struct plamo_parallel *p) {
+    return p ? p->threads : 1;
+}
 
 void plamo_parallel_close(struct plamo_parallel *p) {
-    if (!p) return;
+    if (!p)
+        return;
     if (plamo_compute_context == p) {
         plamo_matvec_kernel = NULL;
         plamo_matmul_kernel = NULL;
@@ -136,7 +173,8 @@ void plamo_parallel_close(struct plamo_parallel *p) {
     p->stopping = 1;
     pthread_cond_broadcast(&p->start);
     pthread_mutex_unlock(&p->mutex);
-    for (unsigned i = 1; i < p->threads; ++i) pthread_join(p->workers[i - 1].thread, NULL);
+    for (unsigned i = 1; i < p->threads; ++i)
+        pthread_join(p->workers[i - 1].thread, NULL);
     pthread_cond_destroy(&p->done);
     pthread_cond_destroy(&p->start);
     pthread_mutex_destroy(&p->mutex);

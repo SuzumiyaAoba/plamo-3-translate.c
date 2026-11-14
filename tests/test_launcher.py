@@ -1,4 +1,5 @@
 """Exercise installed command behavior without model data or network access."""
+
 import json
 import os
 from pathlib import Path
@@ -23,17 +24,30 @@ class LauncherTests(unittest.TestCase):
         self.model = self.data / "models/plamo"
         self.model.mkdir(parents=True)
         self.environment = dict(os.environ, PLAMO_DATA_DIR=str(self.data))
-        self.environment.pop('PLAMO_MODEL', None)
+        self.environment.pop("PLAMO_MODEL", None)
         self.engine = self.root / "plamo-8b"
-        self.engine.write_text(f"#!{sys.executable}\nimport json, os, sys\nprint(json.dumps([os.getcwd(), sys.argv[1:]], ensure_ascii=False))\n")
+        self.engine.write_text(
+            f"#!{sys.executable}\nimport json, os, sys\nprint(json.dumps([os.getcwd(), sys.argv[1:]], ensure_ascii=False))\n"
+        )
         self.engine.chmod(0o755)
         self.launcher = self.root / "plamo"
-        self.launcher.write_text((ROOT / "nix/plamo.sh.in").read_text().replace("@engines@", str(self.root)).replace("@modelProfiles@", render()))
+        self.launcher.write_text(
+            (ROOT / "nix/plamo.sh.in")
+            .read_text()
+            .replace("@engines@", str(self.root))
+            .replace("@modelProfiles@", render())
+        )
         self.shell = shutil.which("bash")
         self.assertIsNotNone(self.shell)
 
     def run_launcher(self, *args):
-        return subprocess.run([self.shell, str(self.launcher), *args], env=self.environment, cwd=self.root, text=True, capture_output=True)
+        return subprocess.run(
+            [self.shell, str(self.launcher), *args],
+            env=self.environment,
+            cwd=self.root,
+            text=True,
+            capture_output=True,
+        )
 
     def vocabulary(self):
         (self.model / "tokenizer.jsonl").write_text("fixture only")
@@ -65,13 +79,26 @@ class LauncherTests(unittest.TestCase):
         for option in ("-g", "-j", "-e"):
             result = self.run_launcher(option, "Hello.")
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(json.loads(result.stdout), [str(self.data.resolve()), [option, "Hello."]])
+            self.assertEqual(
+                json.loads(result.stdout), [str(self.data.resolve()), [option, "Hello."]]
+            )
 
     def test_native_options_preserved_and_generation_still_requires_shards(self):
         self.vocabulary()
-        args = ("--backend", "metal", "--memory", "auto", "--threads", "4", "--max-tokens", "12", "-j", "--quoted text")
+        args = (
+            "--backend",
+            "metal",
+            "--memory",
+            "auto",
+            "--threads",
+            "4",
+            "--max-tokens",
+            "12",
+            "-j",
+            "--quoted text",
+        )
         self.assertEqual(self.run_launcher(*args).returncode, 1)
-        for weight in profile('8b').weights:
+        for weight in profile("8b").weights:
             (self.model / weight).touch()
         result = self.run_launcher(*args)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -111,16 +138,23 @@ class LauncherTests(unittest.TestCase):
                     (model_dir / weight).touch()
                 result = self.run_launcher("--model", size, "-j", "Hello.")
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(json.loads(result.stdout), [str(self.data.resolve()), ["-j", "Hello."]])
+                self.assertEqual(
+                    json.loads(result.stdout), [str(self.data.resolve()), ["-j", "Hello."]]
+                )
                 (model_dir / p.weights[-1]).unlink()
                 missing = self.run_launcher("--model=" + size, "-j", "Hello.")
                 self.assertEqual(missing.returncode, 1)
-                self.assertIn('--model ' + size, missing.stderr)
+                self.assertIn("--model " + size, missing.stderr)
 
     def test_invalid_arguments(self):
-        for args in (("--unknown", "text"), ("--threads", "0", "text"), ("--threads", "65", "text"),
-                     ("--threads", "4x", "text"), ("--max-tokens", "4097", "text"),
-                     ("--max-tokens", "99999999999999999999999", "-j", "text")):
+        for args in (
+            ("--unknown", "text"),
+            ("--threads", "0", "text"),
+            ("--threads", "65", "text"),
+            ("--threads", "4x", "text"),
+            ("--max-tokens", "4097", "text"),
+            ("--max-tokens", "99999999999999999999999", "-j", "text"),
+        ):
             with self.subTest(args=args):
                 result = self.run_launcher(*args)
                 self.assertEqual(result.returncode, 2)
@@ -128,13 +162,29 @@ class LauncherTests(unittest.TestCase):
 
     def test_downloader_uses_same_directory_and_preserves_arguments(self):
         script = self.root / "download probe.py"
-        script.write_text("import json, os, sys\nprint(json.dumps([sys.argv[1:], os.environ['SSL_CERT_FILE']]))\n")
+        script.write_text(
+            "import json, os, sys\nprint(json.dumps([sys.argv[1:], os.environ['SSL_CERT_FILE']]))\n"
+        )
         wrapper = self.root / "plamo-download"
-        wrapper.write_text((ROOT / "nix/plamo-download.sh.in").read_text().replace("@python@", sys.executable).replace("@script@", str(script)).replace("@caBundle@", "/fixture/ca-bundle.crt"))
+        wrapper.write_text(
+            (ROOT / "nix/plamo-download.sh.in")
+            .read_text()
+            .replace("@python@", sys.executable)
+            .replace("@script@", str(script))
+            .replace("@caBundle@", "/fixture/ca-bundle.crt")
+        )
         self.environment.pop("SSL_CERT_FILE", None)
-        result = subprocess.run([self.shell, str(wrapper), "--weights", "--verify"], env=self.environment, text=True, capture_output=True)
+        result = subprocess.run(
+            [self.shell, str(wrapper), "--weights", "--verify"],
+            env=self.environment,
+            text=True,
+            capture_output=True,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout), [["--cache", "--weights", "--verify"], "/fixture/ca-bundle.crt"])
+        self.assertEqual(
+            json.loads(result.stdout),
+            [["--cache", "--weights", "--verify"], "/fixture/ca-bundle.crt"],
+        )
 
 
 if __name__ == "__main__":

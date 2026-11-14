@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Local HTTP translation API backed by one persistent native model worker."""
+
 import argparse
 import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -11,6 +12,7 @@ import signal
 import socket
 import sys
 from urllib.parse import urlsplit
+
 try:
     from .model_catalog import add_model_argument, profile
     from .worker_client import APIError, Disconnected, PersistentWorker
@@ -21,7 +23,6 @@ except ImportError:
 MAX_BODY = 65536
 
 
-
 def validate_request(body):
     if not isinstance(body, dict):
         raise APIError(400, "invalid_request", "request must be a JSON object")
@@ -30,7 +31,11 @@ def validate_request(body):
         raise APIError(400, "invalid_request", "unknown request field")
     text = body.get("text")
     if not isinstance(text, str) or not text or "\0" in text or len(text) > 4096:
-        raise APIError(400, "invalid_text", "text must be nonempty, contain no NUL, and fit within 4096 Unicode scalars including the prompt")
+        raise APIError(
+            400,
+            "invalid_text",
+            "text must be nonempty, contain no NUL, and fit within 4096 Unicode scalars including the prompt",
+        )
     try:
         encoded = text.encode("utf-8")
     except UnicodeEncodeError as error:
@@ -45,7 +50,13 @@ def validate_request(body):
         raise APIError(400, "invalid_max_tokens", "max_tokens must be an integer in 1..4096")
     if type(stream) is not bool:
         raise APIError(400, "invalid_stream", "stream must be a boolean")
-    return {"text": text, "source_lang": source, "target_lang": target, "max_tokens": count, "stream": stream}
+    return {
+        "text": text,
+        "source_lang": source,
+        "target_lang": target,
+        "max_tokens": count,
+        "stream": stream,
+    }
 
 
 class TranslationServer(ThreadingHTTPServer):
@@ -82,9 +93,13 @@ class TranslationHandler(BaseHTTPRequestHandler):
             except ValueError:
                 host = None
             if host not in ("localhost", "127.0.0.1", "::1"):
-                raise APIError(403, "invalid_host", "unauthenticated access requires a loopback Host")
+                raise APIError(
+                    403, "invalid_host", "unauthenticated access requires a loopback Host"
+                )
             if self.headers.get("Origin"):
-                raise APIError(403, "origin_not_allowed", "browser cross-origin requests are not enabled")
+                raise APIError(
+                    403, "origin_not_allowed", "browser cross-origin requests are not enabled"
+                )
 
     def _json(self, status, value):
         payload = json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
@@ -142,7 +157,9 @@ class TranslationHandler(BaseHTTPRequestHandler):
                 raise APIError(400, "invalid_framing", "chunked request bodies are not supported")
             lengths = self.headers.get_all("Content-Length", [])
             if len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdigit():
-                raise APIError(411, "length_required", "one valid Content-Length header is required")
+                raise APIError(
+                    411, "length_required", "one valid Content-Length header is required"
+                )
             length = int(lengths[0])
             if not 0 < length <= MAX_BODY:
                 raise APIError(413, "body_too_large", "request body must fit within 64 KiB")
@@ -158,9 +175,12 @@ class TranslationHandler(BaseHTTPRequestHandler):
             request = validate_request(body)
             tokenize = self.path == "/tokenize"
             stream = request["stream"] and not tokenize
-            result = self.server.worker.run(request, tokenize=tokenize,
-                                            begin=self._begin_stream if stream else None,
-                                            emit=self._event if stream else None)
+            result = self.server.worker.run(
+                request,
+                tokenize=tokenize,
+                begin=self._begin_stream if stream else None,
+                emit=self._event if stream else None,
+            )
             if stream:
                 self._event("done", result)
             else:
@@ -185,13 +205,30 @@ def main():
     parser.add_argument("--worker", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--worker-directory", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--cache", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--data-dir", type=Path, help="model data root (default: PLAMO_DATA_DIR or current directory)")
-    parser.add_argument("--memory", choices=("auto", "resident", "stream"), default="auto",
-                        help="auto preloads the BF16 cache within available memory, with a 2 GiB reserve")
-    parser.add_argument("--threads", type=int, choices=range(1, 65), metavar="1..64",
-                        help="CPU compute threads (default: performance cores); 1 disables parallelism")
-    parser.add_argument("--backend", choices=("auto", "cpu", "metal", "metal-fp32"), default="auto",
-                        help="auto prefers Metal FP32; metal-fp32 is an alias of metal; cpu uses assembly")
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        help="model data root (default: PLAMO_DATA_DIR or current directory)",
+    )
+    parser.add_argument(
+        "--memory",
+        choices=("auto", "resident", "stream"),
+        default="auto",
+        help="auto preloads the BF16 cache within available memory, with a 2 GiB reserve",
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        choices=range(1, 65),
+        metavar="1..64",
+        help="CPU compute threads (default: performance cores); 1 disables parallelism",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=("auto", "cpu", "metal", "metal-fp32"),
+        default="auto",
+        help="auto prefers Metal FP32; metal-fp32 is an alias of metal; cpu uses assembly",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--startup-timeout", type=float, default=180)
@@ -203,26 +240,48 @@ def main():
     api_key = os.environ.get("PLAMO_API_KEY") or None
     if args.host not in ("127.0.0.1", "localhost") and not api_key:
         parser.error("set PLAMO_API_KEY before binding to a non-loopback address")
-    if not 1 <= args.port <= 65535 or not math.isfinite(args.startup_timeout) or args.startup_timeout <= 0:
+    if (
+        not 1 <= args.port <= 65535
+        or not math.isfinite(args.startup_timeout)
+        or args.startup_timeout <= 0
+    ):
         parser.error("port must be 1..65535 and startup-timeout must be positive")
     worker_path = args.worker
     if worker_path is None:
-        worker_path = (args.worker_directory / ("plamo-worker-" + p.size) if args.worker_directory else
-                       p.build_directory(Path(__file__).resolve().parents[1]) / "plamo-worker")
-    worker_path, data_dir = worker_path.resolve(), (args.data_dir or p.data_root(args.cache)).resolve()
+        worker_path = (
+            args.worker_directory / ("plamo-worker-" + p.size)
+            if args.worker_directory
+            else p.build_directory(Path(__file__).resolve().parents[1]) / "plamo-worker"
+        )
+    worker_path, data_dir = (
+        worker_path.resolve(),
+        (args.data_dir or p.data_root(args.cache)).resolve(),
+    )
     if not worker_path.is_file() or not data_dir.is_dir():
-        parser.error("worker or data directory is missing; build the worker and download model files first")
+        parser.error(
+            "worker or data directory is missing; build the worker and download model files first"
+        )
     marker = data_dir / p.directory / "REVISION"
     if marker.exists() and marker.read_text().strip() != p.revision:
-        parser.error("model revision does not match this implementation; select the pinned model directory")
-    worker = PersistentWorker(worker_path, data_dir, args.memory, args.startup_timeout, p, args.threads, args.backend)
+        parser.error(
+            "model revision does not match this implementation; select the pinned model directory"
+        )
+    worker = PersistentWorker(
+        worker_path, data_dir, args.memory, args.startup_timeout, p, args.threads, args.backend
+    )
     previous_term = None
     try:
+
         def stop(_signum, _frame):
             raise KeyboardInterrupt
+
         previous_term = signal.signal(signal.SIGTERM, stop)
         with TranslationServer((args.host, args.port), worker, api_key) as server:
-            print(f"plamo-api: listening on http://{args.host}:{args.port}; check /health for model readiness", file=sys.stderr, flush=True)
+            print(
+                f"plamo-api: listening on http://{args.host}:{args.port}; check /health for model readiness",
+                file=sys.stderr,
+                flush=True,
+            )
             server.serve_forever(poll_interval=0.2)
     except KeyboardInterrupt:
         pass

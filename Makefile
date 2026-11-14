@@ -1,10 +1,14 @@
 .DEFAULT_GOAL := all
+.PHONY: format format-check
+format:
+	nix fmt
+format-check:
+	nix build --no-link .\#checks.aarch64-darwin.formatting
+
 CC = clang
 CFLAGS = -O2 -arch arm64 -Wall -Wextra
 PYTHON ?= python3
 .PHONY: test-tools profile-probes profile-probe
-test-tools: profile-probes
-	PLAMO_TEST_CLI="$(abspath $(BUILD_DIR)/plamo)" $(PYTHON) -m unittest discover -s tests -p 'test_*.py'
 profile-probes:
 	$(MAKE) MODEL=0.8b profile-probe
 	$(MAKE) MODEL=2b profile-probe
@@ -26,11 +30,12 @@ RESIDENT_SOURCE ?= runtime/resident.c
 RUNTIME = runtime/engine.c runtime/tokenizer.c $(RESIDENT_SOURCE) runtime/weight_cache.c runtime/parallel.c runtime/prompt_cache.c $(METAL_RUNTIME) runtime/draft.c
 RUNTIME_HEADERS = runtime/engine.h runtime/tokenizer.h runtime/resident.h runtime/prompt_cache.h runtime/draft.h $(METAL_HEADERS)
 METAL_FLAGS = -Ibuild -framework Foundation -framework Metal
-PROFILE_INPUTS = $(wildcard tools/profiles/$(MODEL)/*.json) tools/generate_model.py tools/model_catalog.py tools/weight_schema.py tools/model_layout.py tools/rope_constants.py
+PROFILE_INPUTS = $(wildcard tools/profiles/$(MODEL)/*.json) tools/generate_model.py tools/model_catalog.py tools/weight_schema.py tools/model_layout.py tools/rope_constants.py tools/format_assembly.py
 
 .PHONY: all models
 all: $(BUILD_DIR)/plamo $(BUILD_DIR)/plamo-asm $(BUILD_DIR)/plamo-worker build/pack-metal-weights
-test-tools: $(BUILD_DIR)/plamo
+test-tools: profile-probes $(BUILD_DIR)/plamo
+	PLAMO_TEST_CLI="$(abspath $(BUILD_DIR)/plamo)" $(PYTHON) -m unittest discover -s tests -p 'test_*.py'
 models:
 	$(MAKE) MODEL=0.8b all
 	$(MAKE) MODEL=2b all

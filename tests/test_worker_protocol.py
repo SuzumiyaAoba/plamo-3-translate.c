@@ -1,4 +1,5 @@
 """The API and verification tools must agree on framing and bounded events."""
+
 import io
 import json
 import struct
@@ -16,8 +17,8 @@ class WorkerProtocolTests(unittest.TestCase):
         frame = stream.getvalue()
         payload = "日本語😀".encode()
         self.assertEqual(struct.unpack("<4I", frame[:16]), (1, 2, 17, len(payload)))
-        self.assertEqual(frame[16:16 + len(payload)], payload)
-        self.assertEqual(frame[16 + len(payload):], struct.pack("<4I", 3, 0, 0, 0))
+        self.assertEqual(frame[16 : 16 + len(payload)], payload)
+        self.assertEqual(frame[16 + len(payload) :], struct.pack("<4I", 3, 0, 0, 0))
 
     def test_error_events_can_be_handled_by_api_or_raised_by_verifiers(self):
         event = {"event": "error", "code": "invalid_input", "message": "invalid prompt"}
@@ -27,7 +28,7 @@ class WorkerProtocolTests(unittest.TestCase):
             receive(SimpleNamespace(stdout=io.BytesIO(frame)))
 
     def test_invalid_or_incomplete_events_are_rejected(self):
-        for frame in (b"", b'{}\n', b'[]\n', b'{"event":2}\n', b'{"event":"done"}', b'invalid\n'):
+        for frame in (b"", b"{}\n", b"[]\n", b'{"event":2}\n', b'{"event":"done"}', b"invalid\n"):
             with self.subTest(frame=frame):
                 with self.assertRaises((RuntimeError, ValueError)):
                     read_event(SimpleNamespace(stdout=io.BytesIO(frame)))

@@ -4,8 +4,11 @@
 
 /* Little-endian, page-aligned copies of the existing raw/packed GPU buffers.
    Offsets inside a packed buffer remain relative to that buffer, not the file. */
-enum { PLAMO_DISK_ALIGNMENT = 16384, PLAMO_DISK_MAX_ENTRIES = 4096,
-       PLAMO_DISK_RAW_LIMIT = 64 * 1024 * 1024 };
+enum {
+    PLAMO_DISK_ALIGNMENT = 16384,
+    PLAMO_DISK_MAX_ENTRIES = 4096,
+    PLAMO_DISK_RAW_LIMIT = 64 * 1024 * 1024
+};
 #define PLAMO_DISK_MAGIC "PLAMOWC1"
 struct plamo_disk_header {
     char magic[8];
@@ -29,15 +32,16 @@ int plamo_disk_cache_packed(const struct plamo_disk_cache *);
    Validate all packed-header offsets before exposing any data to the GPU.
    The mapping stays immutable/alive until close, including after rename/unlink. */
 struct plamo_disk_cache *plamo_disk_cache_open(const char *path, const char *revision,
-    const struct plamo_mapping *, size_t count, char *error, size_t capacity);
+                                               const struct plamo_mapping *, size_t count,
+                                               char *error, size_t capacity);
 /* Exact chunk lookup. Cache misses retain the ordinary reader and packer.
    storage_bytes includes page padding; no allocation or file read is issued. */
 const void *plamo_disk_cache_get(const struct plamo_disk_cache *, const void *source,
-    uint64_t bytes, unsigned packed, uint64_t *storage_bytes);
+                                 uint64_t bytes, unsigned packed, uint64_t *storage_bytes);
 /* Bulk-read a returned range directly into a Metal shared allocation. Keep
    file paging out of the GPU's first command. io uses the weight-I/O counters
    {bytes, pread calls, advice calls, failures}; it may be NULL. */
-int plamo_disk_cache_read(const struct plamo_disk_cache *, const void *range,
-    void *destination, uint64_t storage_bytes, uint64_t io[4]);
+int plamo_disk_cache_read(const struct plamo_disk_cache *, const void *range, void *destination,
+                          uint64_t storage_bytes, uint64_t io[4]);
 void plamo_disk_cache_close(struct plamo_disk_cache *);
 #endif

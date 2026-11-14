@@ -18,6 +18,12 @@ stdenv.mkDerivation {
     root = ../.;
     fileset = lib.fileset.unions [
       ../Makefile
+      ../flake.nix
+      ../.clang-format
+      ../.bake.toml
+      ../ruff.toml
+      ../treefmt.toml
+      ../.github/workflows/ci.yml
       ../src
       ../runtime
       ../tests
@@ -95,6 +101,7 @@ stdenv.mkDerivation {
     install -Dm644 tools/model_catalog.py "$out/share/plamo/model_catalog.py"
     install -Dm644 tools/prepare_weights.py "$out/share/plamo/prepare_weights.py"
     install -Dm644 tools/weight_schema.py "$out/share/plamo/weight_schema.py"
+    install -Dm644 tools/format_assembly.py "$out/share/plamo/format_assembly.py"
     cp -r tools/profiles "$out/share/plamo/profiles"
     mkdir -p "$out/bin"
     substitute nix/plamo.sh.in "$out/bin/plamo" \

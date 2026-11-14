@@ -9,6 +9,7 @@
       system = "aarch64-darwin";
       pkgs = import nixpkgs { inherit system; };
       plamo = pkgs.callPackage ./nix/package.nix { };
+      formatting = import ./nix/formatting.nix { inherit pkgs; };
     in
     {
       packages.${system} = {
@@ -41,16 +42,16 @@
 
       devShells.${system}.default = pkgs.mkShell {
         inputsFrom = [ plamo ];
-        packages = [
-          pkgs.python3
-          pkgs.git
-        ];
+        packages = formatting.tools;
         shellHook = ''
           export PLAMO_DATA_DIR="''${PLAMO_DATA_DIR:-$PWD}"
         '';
       };
 
-      checks.${system}.model-free = plamo;
-      formatter.${system} = pkgs.nixfmt;
+      checks.${system} = {
+        model-free = plamo;
+        formatting = formatting.check plamo.src;
+      };
+      formatter.${system} = formatting.package;
     };
 }

@@ -16,7 +16,8 @@ uint64_t plamo_reclaimable_memory(void) {
     kern_return_t result = host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&info, &count);
     mach_port_deallocate(mach_task_self(), host);
     long page = sysconf(_SC_PAGESIZE);
-    if (result != KERN_SUCCESS || page <= 0) return 0;
+    if (result != KERN_SUCCESS || page <= 0)
+        return 0;
     /* Speculative file pages can be included in both counters. Count them once. */
     uint64_t file_pages = info.external_page_count;
     uint64_t overlap = info.speculative_count < file_pages ? info.speculative_count : file_pages;
@@ -32,11 +33,13 @@ uint64_t plamo_physical_memory(void) {
     return result == KERN_SUCCESS ? info.max_mem : 0;
 }
 
-static void *rebase(void *pointer, const struct plamo_mapping *from, const struct plamo_mapping *to, size_t count) {
+static void *rebase(void *pointer, const struct plamo_mapping *from, const struct plamo_mapping *to,
+                    size_t count) {
     uintptr_t address = (uintptr_t)pointer;
     for (size_t i = 0; i < count; ++i) {
         uintptr_t base = (uintptr_t)from[i].base;
-        if (to[i].base && to[i].bytes >= from[i].bytes && address >= base && address - base < from[i].bytes)
+        if (to[i].base && to[i].bytes >= from[i].bytes && address >= base &&
+            address - base < from[i].bytes)
             return (char *)to[i].base + (address - base);
     }
     return NULL;
@@ -45,7 +48,8 @@ static void *rebase(void *pointer, const struct plamo_mapping *from, const struc
 int plamo_rebase_weights(struct plamo_weight_spec *specs, const struct plamo_mapping *from,
                          const struct plamo_mapping *to, size_t count) {
     for (struct plamo_weight_spec *s = specs; s->name; ++s)
-        if (!s->slot || !rebase(*s->slot, from, to, count)) return 0;
+        if (!s->slot || !rebase(*s->slot, from, to, count))
+            return 0;
     for (struct plamo_weight_spec *s = specs; s->name; ++s)
         *s->slot = rebase(*s->slot, from, to, count);
     return 1;
@@ -53,7 +57,8 @@ int plamo_rebase_weights(struct plamo_weight_spec *specs, const struct plamo_map
 
 void plamo_resident_release(struct plamo_mapping *maps, size_t count) {
     for (size_t i = 0; i < count; ++i) {
-        if (maps[i].base) munmap(maps[i].base, (size_t)maps[i].bytes);
+        if (maps[i].base)
+            munmap(maps[i].base, (size_t)maps[i].bytes);
         maps[i] = (struct plamo_mapping){0};
     }
 }
@@ -63,8 +68,8 @@ int plamo_resident_copy(const struct plamo_mapping *source, const int64_t *fds, 
     uint64_t remaining = 0;
     memset(out, 0, count * sizeof(*out));
     for (size_t i = 0; i < count; ++i) {
-        if (!source[i].base || !source[i].bytes || source[i].bytes > SIZE_MAX ||
-            fds[i] < 0 || fds[i] > INT_MAX || UINT64_MAX - remaining < source[i].bytes) {
+        if (!source[i].base || !source[i].bytes || source[i].bytes > SIZE_MAX || fds[i] < 0 ||
+            fds[i] > INT_MAX || UINT64_MAX - remaining < source[i].bytes) {
             snprintf(error, cap, "invalid source mapping or file descriptor");
             return 0;
         }
@@ -77,7 +82,10 @@ int plamo_resident_copy(const struct plamo_mapping *source, const int64_t *fds, 
             return 0;
         }
         if (available < remaining + reserve) {
-            snprintf(error, cap, "BF16 preload needs %" PRIu64 " bytes including reserve; reclaimable estimate is %" PRIu64 " bytes", remaining + reserve, available);
+            snprintf(error, cap,
+                     "BF16 preload needs %" PRIu64
+                     " bytes including reserve; reclaimable estimate is %" PRIu64 " bytes",
+                     remaining + reserve, available);
             return 0;
         }
     }
@@ -94,17 +102,21 @@ int plamo_resident_copy(const struct plamo_mapping *source, const int64_t *fds, 
         (void)fcntl(fd, F_NOCACHE, 1);
         size_t offset = 0;
         while (offset < size) {
-            if (reserve && !(offset % (256 * 1024 * 1024)) && plamo_reclaimable_memory() < remaining + reserve) {
+            if (reserve && !(offset % (256 * 1024 * 1024)) &&
+                plamo_reclaimable_memory() < remaining + reserve) {
                 snprintf(error, cap, "memory pressure increased while preloading weights");
                 (void)fcntl(fd, F_NOCACHE, 0);
                 goto fail;
             }
             size_t bytes = size - offset;
-            if (bytes > 8 * 1024 * 1024) bytes = 8 * 1024 * 1024;
+            if (bytes > 8 * 1024 * 1024)
+                bytes = 8 * 1024 * 1024;
             ssize_t n = pread(fd, (char *)base + offset, bytes, (off_t)offset);
-            if (n < 0 && errno == EINTR) continue;
+            if (n < 0 && errno == EINTR)
+                continue;
             if (n <= 0) {
-                snprintf(error, cap, "weight read failed: %s", n ? strerror(errno) : "unexpected end of file");
+                snprintf(error, cap, "weight read failed: %s",
+                         n ? strerror(errno) : "unexpected end of file");
                 (void)fcntl(fd, F_NOCACHE, 0);
                 goto fail;
             }

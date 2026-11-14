@@ -15,11 +15,12 @@ struct plamo_weight_cache_info {
    most four times a second while acquiring weights, and explicitly while idle.
    The source mappings/FDs must remain valid until close. */
 struct plamo_weight_cache *plamo_weight_cache_open(const struct plamo_mapping *, const int64_t *,
-                                                  size_t, uint64_t reserve, uint64_t (*available)(void),
-                                                  char *, size_t);
+                                                   size_t, uint64_t reserve,
+                                                   uint64_t (*available)(void), char *, size_t);
 void plamo_weight_cache_close(struct plamo_weight_cache *);
 void plamo_weight_cache_rebalance(struct plamo_weight_cache *);
-void plamo_weight_cache_get_info(const struct plamo_weight_cache *, struct plamo_weight_cache_info *);
+void plamo_weight_cache_get_info(const struct plamo_weight_cache *,
+                                 struct plamo_weight_cache_info *);
 /* Retain a mapped range only if it fits the current budget and read window.
    Unretainable/non-model ranges are skipped without I/O. Zero means a read or
    protection failure; complete retained ranges remain usable on failure. */

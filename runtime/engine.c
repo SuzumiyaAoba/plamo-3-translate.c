@@ -30,14 +30,17 @@ static double now(void) {
 static uint64_t hash(const void *data, size_t count) {
     const unsigned char *p = data;
     uint64_t value = UINT64_C(14695981039346656037);
-    for (size_t i = 0; i < count; ++i) { value ^= p[i]; value *= UINT64_C(1099511628211); }
+    for (size_t i = 0; i < count; ++i) {
+        value ^= p[i];
+        value *= UINT64_C(1099511628211);
+    }
     return value;
 }
 
 static void model_files_error(char *error, size_t cap, const char *message) {
     /* Generated names always end in the selectable size, e.g. "-2b". */
-    snprintf(error, cap, "%s for %s; run plamo-download --weights --model %s",
-             message, plamo_model_name, strrchr(plamo_model_name, '-') + 1);
+    snprintf(error, cap, "%s for %s; run plamo-download --weights --model %s", message,
+             plamo_model_name, strrchr(plamo_model_name, '-') + 1);
 }
 
 void plamo_reset_request(struct model *model) {
@@ -55,7 +58,9 @@ static int preload(struct plamo_engine_info *info, char *error, size_t cap) {
     struct plamo_mapping copies[PLAMO_MAX_WEIGHT_FILES], original[PLAMO_MAX_WEIGHT_FILES];
     size_t count = (size_t)plamo_weight_mapping_count;
     memcpy(original, plamo_weight_mappings, count * sizeof *original);
-    if (!plamo_resident_copy(original, plamo_weight_fds, count, PLAMO_MEMORY_RESERVE, copies, error, cap)) return 0;
+    if (!plamo_resident_copy(original, plamo_weight_fds, count, PLAMO_MEMORY_RESERVE, copies, error,
+                             cap))
+        return 0;
     if (!plamo_rebase_weights(plamo_weight_schema, original, copies, count)) {
         snprintf(error, cap, "a bound tensor is outside the original files");
         plamo_resident_release(copies, count);
@@ -93,14 +98,18 @@ static uint64_t working_weight_bytes(const struct model *model) {
     return bytes;
 }
 
-struct plamo_engine *plamo_engine_open(enum plamo_memory_mode mode, int tokenizer_only, unsigned threads, enum plamo_backend backend,
-                                     struct plamo_engine_info *info, char *error, size_t cap) {
+struct plamo_engine *plamo_engine_open(enum plamo_memory_mode mode, int tokenizer_only,
+                                       unsigned threads, enum plamo_backend backend,
+                                       struct plamo_engine_info *info, char *error, size_t cap) {
     double start = now();
     memset(info, 0, sizeof *info);
     info->threads = 1;
     info->backend = "cpu";
     struct plamo_engine *e = calloc(1, sizeof *e);
-    if (!e) { snprintf(error, cap, "cannot allocate engine state"); return NULL; }
+    if (!e) {
+        snprintf(error, cap, "cannot allocate engine state");
+        return NULL;
+    }
     e->tokenizer = plamo_tokenizer_open(plamo_vocab_path, error, cap);
     if (!e->tokenizer) {
         char message[256];
@@ -113,59 +122,83 @@ struct plamo_engine *plamo_engine_open(enum plamo_memory_mode mode, int tokenize
     info->physical_bytes = plamo_physical_memory();
     info->reclaimable_bytes = plamo_reclaimable_memory();
     if (!tokenizer_only) {
-        if (!plamo_model_open()) { model_files_error(error, cap, "missing or invalid weight files"); goto fail; }
-        for (size_t i = 0; i < plamo_weight_mapping_count; ++i) info->weight_bytes += plamo_weight_mappings[i].bytes;
+        if (!plamo_model_open()) {
+            model_files_error(error, cap, "missing or invalid weight files");
+            goto fail;
+        }
+        for (size_t i = 0; i < plamo_weight_mapping_count; ++i)
+            info->weight_bytes += plamo_weight_mappings[i].bytes;
         if (backend != PLAMO_BACKEND_CPU) {
             enum plamo_metal_packing packing = PLAMO_PACK_AUTO;
             const char *storage = getenv("PLAMO_WEIGHT_STORAGE");
             if (storage && strcmp(storage, "auto")) {
-                if (!strcmp(storage, "raw")) packing = PLAMO_PACK_RAW;
-                else if (!strcmp(storage, "lossless")) packing = PLAMO_PACK_LOSSLESS;
-                else { snprintf(error, cap, "PLAMO_WEIGHT_STORAGE must be auto, raw or lossless"); goto fail; }
+                if (!strcmp(storage, "raw"))
+                    packing = PLAMO_PACK_RAW;
+                else if (!strcmp(storage, "lossless"))
+                    packing = PLAMO_PACK_LOSSLESS;
+                else {
+                    snprintf(error, cap, "PLAMO_WEIGHT_STORAGE must be auto, raw or lossless");
+                    goto fail;
+                }
             }
             // An approximate proposer is a separate process. The 8B target
             // can never select this storage format through this private flag.
             const char *peer = getenv("_PLAMO_DRAFT_PEER");
             if (peer && !strcmp(peer, "1") &&
-                (!strcmp(plamo_model_name, "plamo-3-translate-0.8b") || !strcmp(plamo_model_name, "plamo-3-translate-2b")))
+                (!strcmp(plamo_model_name, "plamo-3-translate-0.8b") ||
+                 !strcmp(plamo_model_name, "plamo-3-translate-2b")))
                 packing = PLAMO_PACK_DRAFT_Q4;
             struct plamo_metal_config config = {
                 .memory = (enum plamo_metal_memory)mode,
                 .precision = PLAMO_METAL_FP32,
-                .packing = packing, .working_weight_bytes = working_weight_bytes(&plamo_model),
-                .maps = plamo_weight_mappings, .fds = plamo_weight_fds,
-                .count = (size_t)plamo_weight_mapping_count, .schema = plamo_weight_schema,
-                .reserve = PLAMO_MEMORY_RESERVE, .available = plamo_reclaimable_memory,
+                .packing = packing,
+                .working_weight_bytes = working_weight_bytes(&plamo_model),
+                .maps = plamo_weight_mappings,
+                .fds = plamo_weight_fds,
+                .count = (size_t)plamo_weight_mapping_count,
+                .schema = plamo_weight_schema,
+                .reserve = PLAMO_MEMORY_RESERVE,
+                .available = plamo_reclaimable_memory,
                 .revision = plamo_model_revision,
-                .prefer_texture_weights = !strcmp(plamo_model_name, "plamo-3-translate-8b")
-            };
+                .prefer_texture_weights = !strcmp(plamo_model_name, "plamo-3-translate-8b")};
             const char *disk_cache = getenv("PLAMO_METAL_CACHE");
             char default_cache[4096];
             if (!disk_cache) {
                 const char *slash = strrchr(plamo_vocab_path, '/');
                 size_t prefix = slash ? (size_t)(slash - plamo_vocab_path + 1) : 0;
-                if (prefix + sizeof "metal-cache-v1.bin" > sizeof default_cache) { snprintf(error, cap, "model cache path is too long"); goto fail; }
+                if (prefix + sizeof "metal-cache-v1.bin" > sizeof default_cache) {
+                    snprintf(error, cap, "model cache path is too long");
+                    goto fail;
+                }
                 memcpy(default_cache, plamo_vocab_path, prefix);
                 memcpy(default_cache + prefix, "metal-cache-v1.bin", sizeof "metal-cache-v1.bin");
-                if (!access(default_cache, F_OK)) disk_cache = default_cache;
+                if (!access(default_cache, F_OK))
+                    disk_cache = default_cache;
             }
-            if (disk_cache && *disk_cache && strcmp(disk_cache, "off")) config.disk_cache_path = disk_cache;
+            if (disk_cache && *disk_cache && strcmp(disk_cache, "off"))
+                config.disk_cache_path = disk_cache;
             e->metal = plamo_metal_open(&config, error, cap);
-            if (!e->metal && backend != PLAMO_BACKEND_AUTO) goto fail;
-            if (!e->metal) snprintf(info->gpu.note, sizeof info->gpu.note, "%s", error);
+            if (!e->metal && backend != PLAMO_BACKEND_AUTO)
+                goto fail;
+            if (!e->metal)
+                snprintf(info->gpu.note, sizeof info->gpu.note, "%s", error);
         }
         if (e->metal) {
             plamo_metal_get_info(e->metal, &info->gpu);
             info->cache = info->gpu.cache;
             info->backend = "metal";
-            info->memory_mode = mode == PLAMO_MEMORY_AUTO ? "adaptive" : mode == PLAMO_MEMORY_RESIDENT ? "resident" : "stream";
-            if (mode == PLAMO_MEMORY_RESIDENT) info->preloaded_weight_bytes = info->cache.cached_bytes;
+            info->memory_mode = mode == PLAMO_MEMORY_AUTO       ? "adaptive"
+                                : mode == PLAMO_MEMORY_RESIDENT ? "resident"
+                                                                : "stream";
+            if (mode == PLAMO_MEMORY_RESIDENT)
+                info->preloaded_weight_bytes = info->cache.cached_bytes;
         } else if (mode == PLAMO_MEMORY_RESIDENT) {
-            if (!preload(info, error, cap)) goto fail;
+            if (!preload(info, error, cap))
+                goto fail;
         } else if (mode == PLAMO_MEMORY_AUTO) {
-            e->weight_cache = plamo_weight_cache_open(plamo_weight_mappings, plamo_weight_fds,
-                                                     (size_t)plamo_weight_mapping_count, PLAMO_MEMORY_RESERVE,
-                                                     plamo_reclaimable_memory, error, cap);
+            e->weight_cache = plamo_weight_cache_open(
+                plamo_weight_mappings, plamo_weight_fds, (size_t)plamo_weight_mapping_count,
+                PLAMO_MEMORY_RESERVE, plamo_reclaimable_memory, error, cap);
             if (e->weight_cache) {
                 plamo_weight_cache_get_info(e->weight_cache, &info->cache);
                 plamo_weight_context = e->weight_cache;
@@ -195,30 +228,43 @@ fail:
 
 void plamo_engine_get_info(struct plamo_engine *e, struct plamo_engine_info *out) {
     *out = e->info;
-    if (e->weight_cache) plamo_weight_cache_get_info(e->weight_cache, &out->cache);
-    if (e->metal) { plamo_metal_get_info(e->metal, &out->gpu); out->cache = out->gpu.cache; }
+    if (e->weight_cache)
+        plamo_weight_cache_get_info(e->weight_cache, &out->cache);
+    if (e->metal) {
+        plamo_metal_get_info(e->metal, &out->gpu);
+        out->cache = out->gpu.cache;
+    }
 }
 
 void plamo_engine_maintain_memory(struct plamo_engine *e) {
-    if (e->weight_cache) plamo_weight_cache_rebalance(e->weight_cache);
-    if (e->metal) plamo_metal_maintain(e->metal);
+    if (e->weight_cache)
+        plamo_weight_cache_rebalance(e->weight_cache);
+    if (e->metal)
+        plamo_metal_maintain(e->metal);
 }
 
-static int prepare_matrix(struct plamo_engine *e, const uint16_t *weights, uint64_t rows, uint64_t columns) {
-    if (!rows || !columns) return 1;
+static int prepare_matrix(struct plamo_engine *e, const uint16_t *weights, uint64_t rows,
+                          uint64_t columns) {
+    if (!rows || !columns)
+        return 1;
     uint64_t row_bytes = columns * 2, window = e->info.cache.staging_bytes / row_bytes;
-    if (!window) return 1; // A wider-than-window row keeps its ordinary mapped path.
-    if (rows <= window) window = rows;
-    else if (window >= 8) window = window / 8 * 8;
+    if (!window)
+        return 1; // A wider-than-window row keeps its ordinary mapped path.
+    if (rows <= window)
+        window = rows;
+    else if (window >= 8)
+        window = window / 8 * 8;
     // Match the projections' prefill/decode row boundaries exactly. Loading
     // only cacheable tiles avoids reading the unretainable part of large models.
     for (uint64_t first = 0; first < rows; first += window) {
         uint64_t count = rows - first;
-        if (count > window) count = window;
+        if (count > window)
+            count = window;
         const void *source = (const char *)weights + first * row_bytes;
-        int ok = e->metal ? plamo_metal_preload(e->metal, source, count * row_bytes) :
-                           plamo_weight_cache_preload(e->weight_cache, source, count * row_bytes);
-        if (!ok) return 0;
+        int ok = e->metal ? plamo_metal_preload(e->metal, source, count * row_bytes)
+                          : plamo_weight_cache_preload(e->weight_cache, source, count * row_bytes);
+        if (!ok)
+            return 0;
     }
     return 1;
 }
@@ -236,21 +282,27 @@ static int prepare_matrices(struct plamo_engine *e) {
         if (!prepare_matrix(e, qkv->weight, (qkv->qh + 2 * qkv->kh) * qkv->dim, qkv->hidden) ||
             !prepare_matrix(e, mixer->weight, mixer->hidden, attention) ||
             !prepare_matrix(e, mlp->gu, mlp->intermediate * 2, mlp->hidden) ||
-            !prepare_matrix(e, mlp->down, mlp->hidden, mlp->intermediate)) return 0;
+            !prepare_matrix(e, mlp->down, mlp->hidden, mlp->intermediate))
+            return 0;
     }
     return prepare_matrix(e, plamo_model.head, plamo_model.vocab, plamo_model.hidden);
 }
 
 static int prepare_weights(struct plamo_engine *e, char *error, size_t cap) {
-    if (e->prepared) return 1;
+    if (e->prepared)
+        return 1;
     int adaptive = !strcmp(e->info.memory_mode, "adaptive");
     if (!adaptive && !(e->metal && !strcmp(e->info.memory_mode, "resident"))) {
-        e->prepared = 1; return 1;
+        e->prepared = 1;
+        return 1;
     }
     double start = now();
-    if (adaptive && !prepare_matrices(e)) goto fail;
-    if (e->metal && !plamo_metal_prepare_model(e->metal, &plamo_model)) goto fail;
-    if (e->metal && !plamo_metal_warm_cache(e->metal)) goto fail;
+    if (adaptive && !prepare_matrices(e))
+        goto fail;
+    if (e->metal && !plamo_metal_prepare_model(e->metal, &plamo_model))
+        goto fail;
+    if (e->metal && !plamo_metal_warm_cache(e->metal))
+        goto fail;
     struct plamo_engine_info info;
     plamo_engine_get_info(e, &info);
     e->info.preloaded_weight_bytes = info.cache.cached_bytes;
@@ -265,9 +317,12 @@ fail:
 }
 
 static void prepare_draft(struct plamo_engine *e) {
-    if (e->draft_prepared) return;
+    if (e->draft_prepared)
+        return;
     e->draft_prepared = 1;
-    if (!e->metal || !strcmp(e->info.memory_mode, "stream") || strcmp(plamo_model_name, "plamo-3-translate-8b")) return;
+    if (!e->metal || !strcmp(e->info.memory_mode, "stream") ||
+        strcmp(plamo_model_name, "plamo-3-translate-8b"))
+        return;
     double start = now();
     e->draft = plamo_draft_open();
     if (e->draft) {
@@ -276,7 +331,8 @@ static void prepare_draft(struct plamo_engine *e) {
         if (setting) {
             char *end;
             unsigned long value = strtoul(setting, &end, 10);
-            if (!*end && value >= 2 && value <= PLAMO_VERIFY_MAX) e->info.speculative_tokens = (unsigned)value;
+            if (!*end && value >= 2 && value <= PLAMO_VERIFY_MAX)
+                e->info.speculative_tokens = (unsigned)value;
         }
     }
     double seconds = now() - start;
@@ -287,21 +343,26 @@ static void prepare_draft(struct plamo_engine *e) {
 int plamo_engine_prepare(struct plamo_engine *e, char *error, size_t cap) {
     const char *setting = getenv("PLAMO_PREFIX_CACHE");
     if (setting && strcmp(setting, "0") && strcmp(setting, "1")) {
-        snprintf(error, cap, "PLAMO_PREFIX_CACHE must be 0 or 1"); return 0;
+        snprintf(error, cap, "PLAMO_PREFIX_CACHE must be 0 or 1");
+        return 0;
     }
     // Reserve the small, fully resident proposer before the target can claim
     // the available memory for its adaptive weights and borrowed file views.
     prepare_draft(e);
-    if (!prepare_weights(e, error, cap)) return 0;
+    if (!prepare_weights(e, error, cap))
+        return 0;
     if (e->prefixes_prepared || !e->metal || !strcmp(e->info.memory_mode, "stream") ||
-        (setting && !strcmp(setting, "0"))) return 1;
+        (setting && !strcmp(setting, "0")))
+        return 1;
     double start = now();
     for (unsigned direction = 0; direction < 2; ++direction) {
         const uint32_t *ids;
         uint64_t count = plamo_tokenizer_prefix(e->tokenizer, direction, &ids, error, cap);
-        if (!count || count == UINT64_MAX || count > PLAMO_PROMPT_PREFIX_LIMIT) break;
+        if (!count || count == UINT64_MAX || count > PLAMO_PROMPT_PREFIX_LIMIT)
+            break;
         float *states = malloc((size_t)(count * plamo_model.hidden * 4));
-        if (!states) break;
+        if (!states)
+            break;
         plamo_reset_request(&plamo_model);
         // Only a fully retained GPU graph primes a template. Partial models
         // decline without reading uncached projections or running the CPU.
@@ -309,9 +370,11 @@ int plamo_engine_prepare(struct plamo_engine *e, char *error, size_t cap) {
         free(states);
         if (ok < 0) {
             plamo_reset_request(&plamo_model);
-            snprintf(error, cap, "cannot prepare fixed translation prefixes"); return 0;
+            snprintf(error, cap, "cannot prepare fixed translation prefixes");
+            return 0;
         }
-        if (!ok) break;
+        if (!ok)
+            break;
         e->prefix[direction] = plamo_prompt_cache_capture(&plamo_model, ids, count);
         e->info.prefix_tokens[direction] = plamo_prompt_cache_tokens(e->prefix[direction]);
         e->info.prefix_bytes += plamo_prompt_cache_bytes(e->prefix[direction]);
@@ -325,103 +388,160 @@ int plamo_engine_prepare(struct plamo_engine *e, char *error, size_t cap) {
 }
 
 uint64_t plamo_engine_tokenize(struct plamo_engine *e, const char *text, unsigned direction,
-                              const uint32_t **ids, char *error, size_t cap) {
+                               const uint32_t **ids, char *error, size_t cap) {
     return plamo_tokenizer_encode(e->tokenizer, text, direction, ids, error, cap);
 }
 
 static int emit_token(struct plamo_engine *e, uint32_t id, const struct plamo_callbacks *cb,
                       struct plamo_result *r, double start, char *error, size_t cap) {
-    if (id == 1 || id == 16) { r->finish_reason = "stop"; return 0; }
-    if (id >= plamo_model.vocab) { snprintf(error, cap, "invalid generated token"); return -1; }
+    if (id == 1 || id == 16) {
+        r->finish_reason = "stop";
+        return 0;
+    }
+    if (id >= plamo_model.vocab) {
+        snprintf(error, cap, "invalid generated token");
+        return -1;
+    }
     const char *decoded;
     uint64_t n = plamo_tokenizer_decode(e->tokenizer, id, &decoded);
-    if (n == UINT64_MAX) { snprintf(error, cap, "token decoding failed"); return -1; }
+    if (n == UINT64_MAX) {
+        snprintf(error, cap, "token decoding failed");
+        return -1;
+    }
     double ready = now() - start;
     if (cb && cb->token && !cb->token(id, decoded, (size_t)n, cb->context)) {
-        r->finish_reason = "cancelled"; return 0;
+        r->finish_reason = "cancelled";
+        return 0;
     }
-    if (!r->completion_tokens) r->first_token_seconds = ready;
+    if (!r->completion_tokens)
+        r->first_token_seconds = ready;
     ++r->completion_tokens;
     return 1;
 }
 
 static void disable_draft(struct plamo_engine *e) {
-    plamo_draft_close(e->draft); e->draft = NULL; e->info.speculative_tokens = 0;
+    plamo_draft_close(e->draft);
+    e->draft = NULL;
+    e->info.speculative_tokens = 0;
 }
 
 int plamo_engine_translate(struct plamo_engine *e, const char *text, unsigned direction,
-                          unsigned max_tokens, const struct plamo_callbacks *cb,
-                          struct plamo_result *result, char *error, size_t cap) {
+                           unsigned max_tokens, const struct plamo_callbacks *cb,
+                           struct plamo_result *result, char *error, size_t cap) {
     memset(result, 0, sizeof *result);
     if (e->tokenizer_only || !max_tokens || max_tokens > 4096) {
-        snprintf(error, cap, "generation requires a loaded model and max_tokens in 1..4096"); return 0;
+        snprintf(error, cap, "generation requires a loaded model and max_tokens in 1..4096");
+        return 0;
     }
     double start = now();
     const uint32_t *ids;
     uint64_t count = plamo_engine_tokenize(e, text, direction, &ids, error, cap);
-    if (count == UINT64_MAX) return 0;
-    if (!count) { snprintf(error, cap, "generation requires a nonempty prompt"); return 0; }
-    if (count > 4096) { snprintf(error, cap, "API generation accepts at most 4096 prompt tokens"); return 0; }
+    if (count == UINT64_MAX)
+        return 0;
+    if (!count) {
+        snprintf(error, cap, "generation requires a nonempty prompt");
+        return 0;
+    }
+    if (count > 4096) {
+        snprintf(error, cap, "API generation accepts at most 4096 prompt tokens");
+        return 0;
+    }
     result->prompt_tokens = count;
     result->tokenize_seconds = now() - start;
     plamo_reset_request(&plamo_model);
     plamo_engine_maintain_memory(e);
-    if (cb && cb->prefill) cb->prefill(count, cb->context);
+    if (cb && cb->prefill)
+        cb->prefill(count, cb->context);
     uint64_t before_bytes = plamo_io_stats[0], before_reads = plamo_io_stats[1];
     struct plamo_weight_cache_info before_cache = {0}, after_cache;
     struct plamo_engine_info sample;
     plamo_engine_get_info(e, &sample);
     before_cache = sample.cache;
-    size_t bytes = (size_t)count * (size_t)plamo_model.hidden * sizeof(float);
-    float *states = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-    if (states == MAP_FAILED) { snprintf(error, cap, "cannot allocate prompt states"); return 0; }
     struct plamo_metal_info gpu_prefill_before = {0}, gpu_prefill_after;
-    if (e->metal) plamo_metal_get_info(e->metal, &gpu_prefill_before);
+    if (e->metal)
+        plamo_metal_get_info(e->metal, &gpu_prefill_before);
     double prefill_start = now();
     // A one-shot CLI has not passed through worker readiness. Fill only the
     // retainable projections before dispatch, so its very first prompt can
     // use the complete GPU graph too. This I/O remains in request timings.
     if (e->metal) {
-        if (max_tokens > 1) prepare_draft(e);
-        if (!prepare_weights(e, error, cap)) { munmap(states, bytes); return 0; }
+        if (max_tokens > 1)
+            prepare_draft(e);
+        if (!prepare_weights(e, error, cap))
+            return 0;
     }
-    if (direction) result->cached_prompt_tokens = plamo_prompt_cache_restore(e->prefix[direction - 1], &plamo_model, ids, count);
-    int ok = plamo_prefill(&plamo_model, ids + result->cached_prompt_tokens, count - result->cached_prompt_tokens, states);
-    int speculate = ok && e->draft && max_tokens > 1;
-    if (speculate && !plamo_draft_reset(e->draft, text, direction)) { disable_draft(e); speculate = 0; }
+    if (direction)
+        result->cached_prompt_tokens =
+            plamo_prompt_cache_restore(e->prefix[direction - 1], &plamo_model, ids, count);
+    const uint32_t *suffix = ids + result->cached_prompt_tokens;
+    uint64_t suffix_tokens = count - result->cached_prompt_tokens;
+    // Translation consumes the final state only. The GPU can omit unused
+    // final-layer outputs; a declined graph still has the ordinary fallback.
+    int ok =
+        e->metal ? plamo_metal_prefill(e->metal, &plamo_model, suffix, suffix_tokens, NULL) : 0;
+    if (!ok) {
+        size_t bytes = (size_t)suffix_tokens * (size_t)plamo_model.hidden * sizeof(float);
+        float *states = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (states == MAP_FAILED) {
+            snprintf(error, cap, "cannot allocate prompt states");
+            return 0;
+        }
+        ok = plamo_prefill(&plamo_model, suffix, suffix_tokens, states) ? 1 : -1;
+        munmap(states, bytes);
+    }
+    int speculate = ok == 1 && e->draft && max_tokens > 1, draft_ready = 0;
     result->prefill_seconds = now() - prefill_start;
     if (e->metal) {
         plamo_metal_get_info(e->metal, &gpu_prefill_after);
-        result->prefill_gpu_seconds = gpu_prefill_after.gpu_seconds - gpu_prefill_before.gpu_seconds;
-        result->prefill_command_buffers = gpu_prefill_after.command_buffers - gpu_prefill_before.command_buffers;
-        result->prefill_gpu_dispatches = gpu_prefill_after.dispatches - gpu_prefill_before.dispatches;
+        result->prefill_gpu_seconds =
+            gpu_prefill_after.gpu_seconds - gpu_prefill_before.gpu_seconds;
+        result->prefill_command_buffers =
+            gpu_prefill_after.command_buffers - gpu_prefill_before.command_buffers;
+        result->prefill_gpu_dispatches =
+            gpu_prefill_after.dispatches - gpu_prefill_before.dispatches;
     }
-    munmap(states, bytes);
-    if (!ok) { snprintf(error, cap, "prefill failed"); return 0; }
+    if (ok != 1) {
+        snprintf(error, cap, "prefill failed");
+        return 0;
+    }
     result->prefill_logits_hash = hash(plamo_model.logits, plamo_model.vocab * 4);
     result->prefill_state_hash = hash(plamo_model.state, plamo_model.hidden * 4);
     result->finish_reason = "length";
     uint64_t decode_bytes = plamo_io_stats[0], decode_reads = plamo_io_stats[1];
     struct plamo_metal_info gpu_before = {0}, gpu_after;
-    if (e->metal) plamo_metal_get_info(e->metal, &gpu_before);
+    if (e->metal)
+        plamo_metal_get_info(e->metal, &gpu_before);
     double decode_start = now();
     unsigned block = e->info.speculative_tokens;
     while (result->completion_tokens < max_tokens) {
         uint32_t id = (uint32_t)plamo_argmax(plamo_model.logits, plamo_model.vocab);
         int emitted = emit_token(e, id, cb, result, start, error, cap);
-        if (emitted < 0) return 0;
-        if (!emitted || result->completion_tokens == max_tokens) break;
+        if (emitted < 0)
+            return 0;
+        if (!emitted || result->completion_tokens == max_tokens)
+            break;
         if (speculate) {
             unsigned limit = max_tokens - (unsigned)result->completion_tokens;
-            if (limit > block) limit = block;
+            if (limit > block)
+                limit = block;
             uint32_t proposed[PLAMO_VERIFY_MAX], next[PLAMO_VERIFY_MAX];
             double draft_start = now();
-            unsigned n = plamo_draft_propose(e->draft, id, limit, proposed);
+            // The first token is already known from the target's prefill.
+            // Emit it before preparing the proposer, and skip that work for
+            // EOS, a one-token response, or cancellation at the first token.
+            if (!draft_ready)
+                draft_ready = plamo_draft_reset(e->draft, text, direction);
+            unsigned n = draft_ready ? plamo_draft_propose(e->draft, id, limit, proposed) : 0;
             result->draft_seconds += now() - draft_start;
-            if (!n) { disable_draft(e); speculate = 0; }
-            else {
+            if (!n) {
+                disable_draft(e);
+                speculate = 0;
+            } else {
                 int verified = plamo_metal_verify(e->metal, &plamo_model, proposed, n, next);
-                if (verified < 0) { snprintf(error, cap, "candidate verification failed"); return 0; }
+                if (verified < 0) {
+                    snprintf(error, cap, "candidate verification failed");
+                    return 0;
+                }
                 if (verified) {
                     ++result->speculative_batches;
                     result->proposed_tokens += n - 1;
@@ -429,30 +549,45 @@ int plamo_engine_translate(struct plamo_engine *e, const char *text, unsigned di
                     int stop = 0;
                     for (unsigned j = 0; j < n; ++j) {
                         if (j) {
-                            if (proposed[j] != next[j - 1]) break;
+                            if (proposed[j] != next[j - 1])
+                                break;
                             emitted = emit_token(e, proposed[j], cb, result, start, error, cap);
-                            if (emitted < 0) return 0;
-                            if (!emitted) { stop = 1; break; }
+                            if (emitted < 0)
+                                return 0;
+                            if (!emitted) {
+                                stop = 1;
+                                break;
+                            }
                         }
                         if (plamo_metal_commit(e->metal, &plamo_model, j) != 1) {
-                            snprintf(error, cap, "candidate commit failed"); return 0;
+                            snprintf(error, cap, "candidate commit failed");
+                            return 0;
                         }
-                        ++consumed; ++result->decode_steps;
+                        ++consumed;
+                        ++result->decode_steps;
                     }
                     result->speculative_tokens += consumed;
                     result->accepted_tokens += consumed ? consumed - 1 : 0;
                     draft_start = now();
-                    if (!plamo_draft_accept(e->draft, consumed)) { disable_draft(e); speculate = 0; }
+                    if (!plamo_draft_accept(e->draft, consumed)) {
+                        disable_draft(e);
+                        speculate = 0;
+                    }
                     result->draft_seconds += now() - draft_start;
-                    if (stop) break;
+                    if (stop)
+                        break;
                     continue;
                 }
                 // No target state has changed. The proposer may be discarded
                 // and the ordinary exact target step remains immediately safe.
-                disable_draft(e); speculate = 0;
+                disable_draft(e);
+                speculate = 0;
             }
         }
-        if (!plamo_forward(&plamo_model, id)) { snprintf(error, cap, "decode failed"); return 0; }
+        if (!plamo_forward(&plamo_model, id)) {
+            snprintf(error, cap, "decode failed");
+            return 0;
+        }
         ++result->decode_steps;
     }
     result->decode_seconds = now() - decode_start;
@@ -463,7 +598,8 @@ int plamo_engine_translate(struct plamo_engine *e, const char *text, unsigned di
         result->decode_gpu_seconds = gpu_after.gpu_seconds - gpu_before.gpu_seconds;
         result->decode_command_buffers = gpu_after.command_buffers - gpu_before.command_buffers;
         result->decode_gpu_dispatches = gpu_after.dispatches - gpu_before.dispatches;
-        result->decode_mapped_bytes = gpu_after.disk_cache_mapped_bytes - gpu_before.disk_cache_mapped_bytes;
+        result->decode_mapped_bytes =
+            gpu_after.disk_cache_mapped_bytes - gpu_before.disk_cache_mapped_bytes;
     }
     result->total_seconds = now() - start;
     result->staged_bytes = plamo_io_stats[0] - before_bytes;

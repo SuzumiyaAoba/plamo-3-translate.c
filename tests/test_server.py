@@ -1,4 +1,5 @@
 """HTTP, worker lifecycle and streaming tests; no model files or network downloads."""
+
 import http.client
 import json
 import os
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 from tools import server as api
 from tools.model_catalog import MODELS, profile
 
-FAKE_WORKER = r'''
+FAKE_WORKER = r"""
 import json, os, select, struct, sys, time
 def send(value):
     print(json.dumps(value), flush=True)
@@ -68,7 +69,7 @@ while True:
           'usage':{'prompt_tokens':len(text),'completion_tokens':generated,'total_tokens':len(text)+generated},
           'timings':{'prefill_seconds':0.01,'decode_seconds':0.02,'total_seconds':0.03},
           'weight_io':{'read_calls':0,'staged_bytes':0},'verification':{'logits_hash':'private-test-field'}})
-'''
+"""
 
 
 class ServerTests(unittest.TestCase):
@@ -86,7 +87,9 @@ class ServerTests(unittest.TestCase):
             time.sleep(0.01)
         self.assertEqual(self.worker.health()["status"], "ready")
         self.server = api.TranslationServer(("127.0.0.1", 0), self.worker)
-        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+        self.thread = threading.Thread(
+            target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+        )
         self.thread.start()
         self.addCleanup(self.close_server)
         self.port = self.server.server_port
@@ -98,9 +101,15 @@ class ServerTests(unittest.TestCase):
 
     def request(self, method="POST", path="/translate", body=None, headers=None):
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
-        payload = json.dumps(body if body is not None else {"text": "Hello."}, ensure_ascii=False).encode()
-        connection.request(method, path, body=payload if method == "POST" else None,
-                           headers={"Content-Type": "application/json", **(headers or {})})
+        payload = json.dumps(
+            body if body is not None else {"text": "Hello."}, ensure_ascii=False
+        ).encode()
+        connection.request(
+            method,
+            path,
+            body=payload if method == "POST" else None,
+            headers={"Content-Type": "application/json", **(headers or {})},
+        )
         response = connection.getresponse()
         data = response.read()
         status, response_headers = response.status, dict(response.getheaders())
@@ -110,7 +119,9 @@ class ServerTests(unittest.TestCase):
     def test_json_translation_reuses_the_same_worker(self):
         before = self.worker.health()["worker_pid"]
         for _ in range(2):
-            status, headers, data = self.request(body={"text": "日本語 😀", "source_lang": "ja", "target_lang": "en"})
+            status, headers, data = self.request(
+                body={"text": "日本語 😀", "source_lang": "ja", "target_lang": "en"}
+            )
             result = json.loads(data)
             self.assertEqual(status, 200)
             self.assertEqual(int(headers["Content-Length"]), len(data))
@@ -121,43 +132,47 @@ class ServerTests(unittest.TestCase):
 
     def test_compute_threads_are_forwarded_and_reported_in_health(self):
         root = Path(self.temp.name)
-        worker = api.PersistentWorker(root / 'fake-worker', root, startup_timeout=5, threads=2)
+        worker = api.PersistentWorker(root / "fake-worker", root, startup_timeout=5, threads=2)
         self.addCleanup(worker.close)
         deadline = time.monotonic() + 5
-        while worker.health()['status'] == 'loading' and time.monotonic() < deadline:
+        while worker.health()["status"] == "loading" and time.monotonic() < deadline:
             time.sleep(0.01)
-        self.assertEqual(worker.health()['status'], 'ready')
-        self.assertEqual(worker.health()['threads'], 2)
-        status, _, payload = self.request('GET', '/health')
+        self.assertEqual(worker.health()["status"], "ready")
+        self.assertEqual(worker.health()["threads"], 2)
+        status, _, payload = self.request("GET", "/health")
         self.assertEqual(status, 200)
-        self.assertEqual(json.loads(payload)['threads'], 4)
-        self.assertEqual(json.loads(payload)['preload_seconds'], 0.005)
-        self.assertEqual(json.loads(payload)['memory']['preloaded_weight_bytes'], 128)
+        self.assertEqual(json.loads(payload)["threads"], 4)
+        self.assertEqual(json.loads(payload)["preload_seconds"], 0.005)
+        self.assertEqual(json.loads(payload)["memory"]["preloaded_weight_bytes"], 128)
 
     def test_metal_selection_and_live_compute_counters(self):
         root = Path(self.temp.name)
-        worker = api.PersistentWorker(root / 'fake-worker', root, startup_timeout=5, backend='metal')
+        worker = api.PersistentWorker(
+            root / "fake-worker", root, startup_timeout=5, backend="metal"
+        )
         self.addCleanup(worker.close)
         deadline = time.monotonic() + 5
-        while worker.health()['status'] == 'loading' and time.monotonic() < deadline:
+        while worker.health()["status"] == "loading" and time.monotonic() < deadline:
             time.sleep(0.01)
-        self.assertEqual(worker.health()['status'], 'ready')
-        self.assertEqual(worker.health()['compute']['backend'], 'metal')
-        worker.run(api.validate_request({'text': 'Hello.'}))
-        self.assertEqual(worker.health()['compute']['gpu_dispatches'], 4)
+        self.assertEqual(worker.health()["status"], "ready")
+        self.assertEqual(worker.health()["compute"]["backend"], "metal")
+        worker.run(api.validate_request({"text": "Hello."}))
+        self.assertEqual(worker.health()["compute"]["gpu_dispatches"], 4)
 
     def test_health_reflects_unavailable_draft_after_request(self):
         root = Path(self.temp.name)
-        worker = api.PersistentWorker(root / 'fake-worker', root, startup_timeout=5, backend='metal')
+        worker = api.PersistentWorker(
+            root / "fake-worker", root, startup_timeout=5, backend="metal"
+        )
         self.addCleanup(worker.close)
         deadline = time.monotonic() + 5
-        while worker.health()['status'] == 'loading' and time.monotonic() < deadline:
+        while worker.health()["status"] == "loading" and time.monotonic() < deadline:
             time.sleep(0.01)
-        self.assertTrue(worker.health()['speculative']['enabled'])
-        result = worker.run(api.validate_request({'text': 'draft-failed'}))
-        self.assertFalse(result['speculative']['enabled'])
-        self.assertEqual(result['translation'], 'こんにちは。')
-        self.assertEqual(worker.health()['speculative'], result['speculative'])
+        self.assertTrue(worker.health()["speculative"]["enabled"])
+        result = worker.run(api.validate_request({"text": "draft-failed"}))
+        self.assertFalse(result["speculative"]["enabled"])
+        self.assertEqual(result["translation"], "こんにちは。")
+        self.assertEqual(worker.health()["speculative"], result["speculative"])
 
     def test_sse_reassembles_utf8_split_between_tokens(self):
         status, headers, payload = self.request(body={"text": "Hello.", "stream": True})
@@ -168,7 +183,9 @@ class ServerTests(unittest.TestCase):
             name, value = frame.split("\n", 1)
             events.append((name[7:], json.loads(value[6:])))
         self.assertEqual(events[0][0], "prefill")
-        self.assertEqual("".join(value["text"] for name, value in events if name == "token"), "こんにちは。")
+        self.assertEqual(
+            "".join(value["text"] for name, value in events if name == "token"), "こんにちは。"
+        )
         self.assertEqual(events[-1][0], "done")
         self.assertEqual(events[-1][1]["translation"], "こんにちは。")
 
@@ -187,7 +204,9 @@ class ServerTests(unittest.TestCase):
 
     def test_health_remains_responsive_and_busy_requests_get_429(self):
         responses = []
-        thread = threading.Thread(target=lambda: responses.append(self.request(body={"text": "slow"})))
+        thread = threading.Thread(
+            target=lambda: responses.append(self.request(body={"text": "slow"}))
+        )
         thread.start()
         deadline = time.monotonic() + 3
         while not self.worker.health()["busy"] and time.monotonic() < deadline:
@@ -217,11 +236,21 @@ class ServerTests(unittest.TestCase):
             self.worker._state = "ready"
 
     def test_request_validation(self):
-        bad = [None, [], {}, {"text": ""}, {"text": "x\0y"}, {"text": "\ud800"},
-               {"text": "x" * 4097}, {"text": "x", "source_lang": "fr"},
-               {"text": "x", "max_tokens": True}, {"text": "x", "max_tokens": 0},
-               {"text": "x", "max_tokens": 4097}, {"text": "x", "stream": "false"},
-               {"text": "x", "unexpected": 1}]
+        bad = [
+            None,
+            [],
+            {},
+            {"text": ""},
+            {"text": "x\0y"},
+            {"text": "\ud800"},
+            {"text": "x" * 4097},
+            {"text": "x", "source_lang": "fr"},
+            {"text": "x", "max_tokens": True},
+            {"text": "x", "max_tokens": 0},
+            {"text": "x", "max_tokens": 4097},
+            {"text": "x", "stream": "false"},
+            {"text": "x", "unexpected": 1},
+        ]
         for body in bad:
             with self.subTest(body=repr(body)[:70]):
                 with self.assertRaises(api.APIError):
@@ -241,6 +270,7 @@ class ServerTests(unittest.TestCase):
     def test_cancellation_drains_the_old_response_before_the_next_request(self):
         def disconnected(_name, _event):
             raise BrokenPipeError("test client disconnected")
+
         request = api.validate_request({"text": "slow"})
         with self.assertRaises(api.Disconnected):
             self.worker.run(request, emit=disconnected)
@@ -256,17 +286,22 @@ class ServerTests(unittest.TestCase):
 
     def test_request_framing_and_json_errors(self):
         requests = [
-            (b'Content-Length: 2\r\nContent-Type: application/json\r\n', b'{x', 400),
-            (b'Content-Length: 2\r\nContent-Type: text/plain\r\n', b'{}', 415),
-            (b'Content-Length: 70000\r\nContent-Type: application/json\r\n', b'', 413),
-            (b'Content-Type: application/json\r\n', b'', 411),
-            (b'Transfer-Encoding: chunked\r\n', b'', 400),
-            (b'Content-Length: 2\r\nContent-Length: 2\r\n', b'{}', 411),
+            (b"Content-Length: 2\r\nContent-Type: application/json\r\n", b"{x", 400),
+            (b"Content-Length: 2\r\nContent-Type: text/plain\r\n", b"{}", 415),
+            (b"Content-Length: 70000\r\nContent-Type: application/json\r\n", b"", 413),
+            (b"Content-Type: application/json\r\n", b"", 411),
+            (b"Transfer-Encoding: chunked\r\n", b"", 400),
+            (b"Content-Length: 2\r\nContent-Length: 2\r\n", b"{}", 411),
         ]
         for headers, payload, expected in requests:
             with self.subTest(expected=expected, headers=headers):
                 with socket.create_connection(("127.0.0.1", self.port), timeout=5) as connection:
-                    connection.sendall(b'POST /translate HTTP/1.1\r\nHost: 127.0.0.1\r\n' + headers + b'\r\n' + payload)
+                    connection.sendall(
+                        b"POST /translate HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                        + headers
+                        + b"\r\n"
+                        + payload
+                    )
                     response = http.client.HTTPResponse(connection)
                     response.begin()
                     self.assertEqual(response.status, expected)
@@ -276,54 +311,73 @@ class ServerTests(unittest.TestCase):
 class NativeWorkerArgumentsTests(unittest.TestCase):
     def test_missing_model_explains_the_selected_download(self):
         import subprocess
+
         for size in MODELS:
-            worker = profile(size).build_directory(ROOT) / 'plamo-worker'
+            worker = profile(size).build_directory(ROOT) / "plamo-worker"
             if not worker.exists():
-                self.skipTest('run make models first')
+                self.skipTest("run make models first")
             with self.subTest(model=size), tempfile.TemporaryDirectory() as folder:
                 result = subprocess.run([worker], cwd=folder, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 1)
                 event = json.loads(result.stdout)
-                self.assertEqual(event['event'], 'error')
-                self.assertIn('--model ' + size, event['message'])
+                self.assertEqual(event["event"], "error")
+                self.assertIn("--model " + size, event["message"])
 
     def test_wrong_model_worker_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            executable = root / 'wrong-worker'
-            executable.write_text(f'#!{sys.executable}\n' + FAKE_WORKER)
+            executable = root / "wrong-worker"
+            executable.write_text(f"#!{sys.executable}\n" + FAKE_WORKER)
             executable.chmod(0o755)
-            worker = api.PersistentWorker(executable, root, startup_timeout=5, model_profile=profile('31b'))
+            worker = api.PersistentWorker(
+                executable, root, startup_timeout=5, model_profile=profile("31b")
+            )
             try:
                 deadline = time.monotonic() + 5
-                while worker.health()['status'] == 'loading' and time.monotonic() < deadline:
+                while worker.health()["status"] == "loading" and time.monotonic() < deadline:
                     time.sleep(0.01)
                 health = worker.health()
-                self.assertEqual(health['status'], 'failed')
-                self.assertEqual(health['model'], 'plamo-3-translate-31b')
-                self.assertIn('worker model/revision', health['error'])
+                self.assertEqual(health["status"], "failed")
+                self.assertEqual(health["model"], "plamo-3-translate-31b")
+                self.assertIn("worker model/revision", health["error"])
             finally:
                 worker.close()
 
     def test_native_help_needs_no_model(self):
         import subprocess
+
         worker = ROOT / "build/plamo-worker"
         if not worker.exists():
             self.skipTest("build the native worker first")
-        result = subprocess.run([worker, "--help"], cwd=tempfile.gettempdir(), capture_output=True, text=True)
+        result = subprocess.run(
+            [worker, "--help"], cwd=tempfile.gettempdir(), capture_output=True, text=True
+        )
         self.assertEqual(result.returncode, 0)
         self.assertIn("resident", result.stdout)
 
     def test_server_rejects_a_different_revision_before_starting_worker(self):
         import subprocess
+
         for size in MODELS:
             with self.subTest(model=size), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
                 marker = root / profile(size).directory / "REVISION"
                 marker.parent.mkdir(parents=True)
                 marker.write_text("another-revision\n")
-                result = subprocess.run([sys.executable, ROOT / "tools/server.py", "--model", size,
-                                         "--worker", sys.executable, "--data-dir", root], capture_output=True, text=True)
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        ROOT / "tools/server.py",
+                        "--model",
+                        size,
+                        "--worker",
+                        sys.executable,
+                        "--data-dir",
+                        root,
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
                 self.assertEqual(result.returncode, 2)
                 self.assertIn("revision does not match", result.stderr)
 

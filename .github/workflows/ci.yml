@@ -1,17 +1,13 @@
 name: Nix
-
 on:
   push:
   pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: nix-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   check:
     runs-on: macos-15

@@ -6,23 +6,39 @@
 #include <unistd.h>
 
 #define MIB (UINT64_C(1024) * 1024)
-#define CHECK(condition) do { if (!(condition)) { fprintf(stderr, "weight cache check failed at line %d: %s\n", __LINE__, #condition); exit(1); } } while (0)
+#define CHECK(condition)                                                                           \
+    do {                                                                                           \
+        if (!(condition)) {                                                                        \
+            fprintf(stderr, "weight cache check failed at line %d: %s\n", __LINE__, #condition);   \
+            exit(1);                                                                               \
+        }                                                                                          \
+    } while (0)
 extern const void *plamo_weight_acquire(const void *, uint64_t);
 extern void plamo_bf16_matvec(const uint16_t *, const float *, float *, uint64_t, uint64_t);
-struct matmul { const uint16_t *w; const float *x; float *y; uint64_t rows, cols, tokens, xs, ys; };
+struct matmul {
+    const uint16_t *w;
+    const float *x;
+    float *y;
+    uint64_t rows, cols, tokens, xs, ys;
+};
 extern void plamo_bf16_matmul(const struct matmul *);
 static uint64_t available_bytes;
-static uint64_t available(void) { return available_bytes; }
+static uint64_t available(void) {
+    return available_bytes;
+}
 
 static struct plamo_weight_cache *open_cache(struct plamo_mapping *map, int64_t *fd) {
     char error[256];
     available_bytes = 16 * MIB;
-    struct plamo_weight_cache *c = plamo_weight_cache_open(map, fd, 1, 8 * MIB, available, error, sizeof error);
-    if (!c) fprintf(stderr, "%s\n", error);
+    struct plamo_weight_cache *c =
+        plamo_weight_cache_open(map, fd, 1, 8 * MIB, available, error, sizeof error);
+    if (!c)
+        fprintf(stderr, "%s\n", error);
     CHECK(c);
     struct plamo_weight_cache_info info;
     plamo_weight_cache_get_info(c, &info);
-    CHECK(info.budget_bytes == 8 * MIB && info.max_budget_bytes == 8 * MIB && info.staging_bytes == MIB && !info.cached_bytes);
+    CHECK(info.budget_bytes == 8 * MIB && info.max_budget_bytes == 8 * MIB &&
+          info.staging_bytes == MIB && !info.cached_bytes);
     available_bytes = 13 * MIB;
     plamo_weight_cache_rebalance(c);
     plamo_weight_cache_get_info(c, &info);
@@ -39,11 +55,13 @@ static void cache_tests(struct plamo_mapping *map, int64_t *fd, const unsigned c
         const char *source = (char *)map->base + 37 + i * MIB;
         const void *p = plamo_weight_cache_acquire(source, MIB, c);
         CHECK(p != source && !memcmp(p, expected + 37 + i * MIB, MIB));
-        if (i < 4) saved[i] = p;
+        if (i < 4)
+            saved[i] = p;
     }
     CHECK(plamo_io_stats[1] - before == 6);
     plamo_weight_cache_get_info(c, &info);
-    CHECK(info.cached_bytes == 4 * MIB && info.cached_bytes + info.staging_bytes <= info.budget_bytes);
+    CHECK(info.cached_bytes == 4 * MIB &&
+          info.cached_bytes + info.staging_bytes <= info.budget_bytes);
     for (unsigned i = 0; i < 4; ++i) {
         const char *source = (char *)map->base + 37 + i * MIB;
         CHECK(plamo_weight_cache_acquire(source, MIB, c) == saved[i]);
@@ -90,7 +108,8 @@ static void cache_tests(struct plamo_mapping *map, int64_t *fd, const unsigned c
     CHECK(p != map->base && !memcmp(p, expected, MIB));
     CHECK(plamo_weight_cache_acquire(expected, MIB, c) == expected);
     CHECK(plamo_weight_cache_acquire(map->base, 0, c) == map->base);
-    CHECK(plamo_weight_cache_acquire((char *)map->base + map->bytes - 3, MIB, c) == (char *)map->base + map->bytes - 3);
+    CHECK(plamo_weight_cache_acquire((char *)map->base + map->bytes - 3, MIB, c) ==
+          (char *)map->base + map->bytes - 3);
     plamo_weight_cache_close(c);
 
     c = open_cache(map, fd);
@@ -112,8 +131,10 @@ static void kernel_tests(struct plamo_mapping *map, int64_t *fd) {
     float *input = malloc(TOKENS * XS * sizeof(float));
     float reference[TOKENS * YS], actual[TOKENS * YS];
     CHECK(input);
-    for (size_t i = 0; i < TOKENS * XS; ++i) input[i] = (float)((int)(i % 31) - 15) / 31;
-    for (size_t i = 0; i < TOKENS * YS; ++i) reference[i] = actual[i] = -123456.f;
+    for (size_t i = 0; i < TOKENS * XS; ++i)
+        input[i] = (float)((int)(i % 31) - 15) / 31;
+    for (size_t i = 0; i < TOKENS * YS; ++i)
+        reference[i] = actual[i] = -123456.f;
     struct matmul m = {map->base, input, reference, ROWS, COLS, TOKENS, XS, YS};
     plamo_io_policy = 0;
     plamo_bf16_matmul(&m);
@@ -139,7 +160,8 @@ static void kernel_tests(struct plamo_mapping *map, int64_t *fd) {
 static void preload_tests(struct plamo_mapping *map, int64_t *fd, const unsigned char *expected) {
     char error[256];
     available_bytes = 13 * MIB;
-    struct plamo_weight_cache *c = plamo_weight_cache_open(map, fd, 1, 8 * MIB, available, error, sizeof error);
+    struct plamo_weight_cache *c =
+        plamo_weight_cache_open(map, fd, 1, 8 * MIB, available, error, sizeof error);
     CHECK(c);
     uint64_t before = plamo_io_stats[0];
     for (unsigned i = 0; i < 8; ++i)
@@ -155,7 +177,7 @@ static void preload_tests(struct plamo_mapping *map, int64_t *fd, const unsigned
     }
     CHECK(plamo_io_stats[0] - before == 4 * MIB);
     CHECK(plamo_weight_cache_preload(c, map->base, 0));
-    CHECK(plamo_weight_cache_preload(c, expected, MIB)); // Non-model data is not read.
+    CHECK(plamo_weight_cache_preload(c, expected, MIB));      // Non-model data is not read.
     CHECK(plamo_weight_cache_preload(c, map->base, 2 * MIB)); // Outside the read window.
     CHECK(plamo_io_stats[0] - before == 4 * MIB);
     available_bytes = 0;
@@ -184,7 +206,8 @@ int main(void) {
     size_t bytes = 8 * MIB + 128;
     uint16_t *expected = malloc(bytes);
     CHECK(expected);
-    for (size_t i = 0; i < bytes / 2; ++i) expected[i] = (uint16_t)(0x3e00 + i % 127);
+    for (size_t i = 0; i < bytes / 2; ++i)
+        expected[i] = (uint16_t)(0x3e00 + i % 127);
     FILE *file = tmpfile();
     CHECK(file && fwrite(expected, 1, bytes, file) == bytes && !fflush(file));
     int64_t fd = fileno(file);
@@ -194,7 +217,10 @@ int main(void) {
     cache_tests(&map, &fd, (unsigned char *)expected);
     kernel_tests(&map, &fd);
     preload_tests(&map, &fd, (unsigned char *)expected);
-    munmap(base, bytes); fclose(file); free(expected);
-    puts("adaptive weights: PASS (bounded preloading without staging reads, reuse, pressure shrink/grow, short-read recovery, bitwise tiled kernels)");
+    munmap(base, bytes);
+    fclose(file);
+    free(expected);
+    puts(
+        "adaptive weights: PASS (bounded preloading without staging reads, reuse, pressure shrink/grow, short-read recovery, bitwise tiled kernels)");
     return 0;
 }

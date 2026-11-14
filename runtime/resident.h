@@ -9,8 +9,8 @@ uint64_t plamo_physical_memory(void);
 /* Copies exact file bytes into private, read-only mappings. No weight conversion.
    On failure all output mappings are released; inputs and their FDs are retained.
    reserve=0 disables the capacity guard for small, model-free unit tests. */
-int plamo_resident_copy(const struct plamo_mapping *, const int64_t *, size_t,
-                        uint64_t reserve, struct plamo_mapping *, char *, size_t);
+int plamo_resident_copy(const struct plamo_mapping *, const int64_t *, size_t, uint64_t reserve,
+                        struct plamo_mapping *, char *, size_t);
 void plamo_resident_release(struct plamo_mapping *, size_t);
 /* Validate every tensor before changing any pointer. The byte offset is retained. */
 int plamo_rebase_weights(struct plamo_weight_spec *, const struct plamo_mapping *,

@@ -1,0 +1,13 @@
+[formatter]
+space_around_assignment = true
+space_before_colon = false
+space_after_colon = true
+normalize_line_continuations = true
+max_line_length = 100
+auto_insert_phony_declarations = false
+group_phony_declarations = false
+phony_at_top = false
+remove_trailing_whitespace = true
+ensure_final_newline = true
+normalize_empty_lines = true
+fix_missing_recipe_tabs = false

@@ -3,346 +3,346 @@
 .p2align 3
 .globl _plamo_weight_schema
 _plamo_weight_schema:
-.quad Lweightname0,2,Lweightdims0,_plamo_weights+0
-.quad Lweightname1,1,Lweightdims1,_plamo_weights+8
-.quad Lweightname2,2,Lweightdims2,_plamo_weights+16
-.quad Lweightname3,2,Lweightdims3,_plamo_weights+24
-.quad Lweightname4,2,Lweightdims4,_plamo_weights+32
-.quad Lweightname5,1,Lweightdims5,_plamo_weights+40
-.quad Lweightname6,1,Lweightdims6,_plamo_weights+48
-.quad Lweightname7,2,Lweightdims7,_plamo_weights+56
-.quad Lweightname8,2,Lweightdims8,_plamo_weights+64
-.quad Lweightname9,1,Lweightdims9,_plamo_weights+72
-.quad Lweightname10,1,Lweightdims10,_plamo_weights+80
-.quad Lweightname11,1,Lweightdims11,_plamo_weights+88
-.quad Lweightname12,1,Lweightdims12,_plamo_weights+96
-.quad Lweightname13,2,Lweightdims13,_plamo_weights+104
-.quad Lweightname14,2,Lweightdims14,_plamo_weights+112
-.quad Lweightname15,1,Lweightdims15,_plamo_weights+120
-.quad Lweightname16,1,Lweightdims16,_plamo_weights+128
-.quad Lweightname17,2,Lweightdims17,_plamo_weights+136
-.quad Lweightname18,2,Lweightdims18,_plamo_weights+144
-.quad Lweightname19,1,Lweightdims19,_plamo_weights+152
-.quad Lweightname20,1,Lweightdims20,_plamo_weights+160
-.quad Lweightname21,1,Lweightdims21,_plamo_weights+168
-.quad Lweightname22,1,Lweightdims22,_plamo_weights+176
-.quad Lweightname23,2,Lweightdims23,_plamo_weights+184
-.quad Lweightname24,2,Lweightdims24,_plamo_weights+192
-.quad Lweightname25,1,Lweightdims25,_plamo_weights+200
-.quad Lweightname26,1,Lweightdims26,_plamo_weights+208
-.quad Lweightname27,2,Lweightdims27,_plamo_weights+216
-.quad Lweightname28,2,Lweightdims28,_plamo_weights+224
-.quad Lweightname29,1,Lweightdims29,_plamo_weights+232
-.quad Lweightname30,1,Lweightdims30,_plamo_weights+240
-.quad Lweightname31,1,Lweightdims31,_plamo_weights+248
-.quad Lweightname32,1,Lweightdims32,_plamo_weights+256
-.quad Lweightname33,2,Lweightdims33,_plamo_weights+264
-.quad Lweightname34,2,Lweightdims34,_plamo_weights+272
-.quad Lweightname35,1,Lweightdims35,_plamo_weights+280
-.quad Lweightname36,1,Lweightdims36,_plamo_weights+288
-.quad Lweightname37,2,Lweightdims37,_plamo_weights+296
-.quad Lweightname38,2,Lweightdims38,_plamo_weights+304
-.quad Lweightname39,1,Lweightdims39,_plamo_weights+312
-.quad Lweightname40,1,Lweightdims40,_plamo_weights+320
-.quad Lweightname41,1,Lweightdims41,_plamo_weights+328
-.quad Lweightname42,1,Lweightdims42,_plamo_weights+336
-.quad Lweightname43,2,Lweightdims43,_plamo_weights+344
-.quad Lweightname44,2,Lweightdims44,_plamo_weights+352
-.quad Lweightname45,1,Lweightdims45,_plamo_weights+360
-.quad Lweightname46,1,Lweightdims46,_plamo_weights+368
-.quad Lweightname47,2,Lweightdims47,_plamo_weights+376
-.quad Lweightname48,2,Lweightdims48,_plamo_weights+384
-.quad Lweightname49,1,Lweightdims49,_plamo_weights+392
-.quad Lweightname50,1,Lweightdims50,_plamo_weights+400
-.quad Lweightname51,1,Lweightdims51,_plamo_weights+408
-.quad Lweightname52,1,Lweightdims52,_plamo_weights+416
-.quad Lweightname53,2,Lweightdims53,_plamo_weights+424
-.quad Lweightname54,2,Lweightdims54,_plamo_weights+432
-.quad Lweightname55,1,Lweightdims55,_plamo_weights+440
-.quad Lweightname56,1,Lweightdims56,_plamo_weights+448
-.quad Lweightname57,2,Lweightdims57,_plamo_weights+456
-.quad Lweightname58,2,Lweightdims58,_plamo_weights+464
-.quad Lweightname59,1,Lweightdims59,_plamo_weights+472
-.quad Lweightname60,1,Lweightdims60,_plamo_weights+480
-.quad Lweightname61,1,Lweightdims61,_plamo_weights+488
-.quad Lweightname62,1,Lweightdims62,_plamo_weights+496
-.quad Lweightname63,2,Lweightdims63,_plamo_weights+504
-.quad Lweightname64,2,Lweightdims64,_plamo_weights+512
-.quad Lweightname65,1,Lweightdims65,_plamo_weights+520
-.quad Lweightname66,1,Lweightdims66,_plamo_weights+528
-.quad Lweightname67,2,Lweightdims67,_plamo_weights+536
-.quad Lweightname68,2,Lweightdims68,_plamo_weights+544
-.quad Lweightname69,1,Lweightdims69,_plamo_weights+552
-.quad Lweightname70,1,Lweightdims70,_plamo_weights+560
-.quad Lweightname71,1,Lweightdims71,_plamo_weights+568
-.quad Lweightname72,1,Lweightdims72,_plamo_weights+576
-.quad Lweightname73,2,Lweightdims73,_plamo_weights+584
-.quad Lweightname74,2,Lweightdims74,_plamo_weights+592
-.quad Lweightname75,1,Lweightdims75,_plamo_weights+600
-.quad Lweightname76,1,Lweightdims76,_plamo_weights+608
-.quad Lweightname77,2,Lweightdims77,_plamo_weights+616
-.quad Lweightname78,2,Lweightdims78,_plamo_weights+624
-.quad Lweightname79,1,Lweightdims79,_plamo_weights+632
-.quad Lweightname80,1,Lweightdims80,_plamo_weights+640
-.quad Lweightname81,1,Lweightdims81,_plamo_weights+648
-.quad Lweightname82,1,Lweightdims82,_plamo_weights+656
-.quad Lweightname83,2,Lweightdims83,_plamo_weights+664
-.quad Lweightname84,2,Lweightdims84,_plamo_weights+672
-.quad Lweightname85,1,Lweightdims85,_plamo_weights+680
-.quad Lweightname86,1,Lweightdims86,_plamo_weights+688
-.quad Lweightname87,2,Lweightdims87,_plamo_weights+696
-.quad Lweightname88,2,Lweightdims88,_plamo_weights+704
-.quad Lweightname89,1,Lweightdims89,_plamo_weights+712
-.quad Lweightname90,1,Lweightdims90,_plamo_weights+720
-.quad Lweightname91,1,Lweightdims91,_plamo_weights+728
-.quad Lweightname92,1,Lweightdims92,_plamo_weights+736
-.quad Lweightname93,2,Lweightdims93,_plamo_weights+744
-.quad Lweightname94,2,Lweightdims94,_plamo_weights+752
-.quad Lweightname95,1,Lweightdims95,_plamo_weights+760
-.quad Lweightname96,1,Lweightdims96,_plamo_weights+768
-.quad Lweightname97,2,Lweightdims97,_plamo_weights+776
-.quad Lweightname98,2,Lweightdims98,_plamo_weights+784
-.quad Lweightname99,1,Lweightdims99,_plamo_weights+792
-.quad Lweightname100,1,Lweightdims100,_plamo_weights+800
-.quad Lweightname101,1,Lweightdims101,_plamo_weights+808
-.quad Lweightname102,1,Lweightdims102,_plamo_weights+816
-.quad Lweightname103,2,Lweightdims103,_plamo_weights+824
-.quad Lweightname104,2,Lweightdims104,_plamo_weights+832
-.quad Lweightname105,1,Lweightdims105,_plamo_weights+840
-.quad Lweightname106,1,Lweightdims106,_plamo_weights+848
-.quad Lweightname107,2,Lweightdims107,_plamo_weights+856
-.quad Lweightname108,2,Lweightdims108,_plamo_weights+864
-.quad Lweightname109,1,Lweightdims109,_plamo_weights+872
-.quad Lweightname110,1,Lweightdims110,_plamo_weights+880
-.quad Lweightname111,1,Lweightdims111,_plamo_weights+888
-.quad Lweightname112,1,Lweightdims112,_plamo_weights+896
-.quad Lweightname113,2,Lweightdims113,_plamo_weights+904
-.quad Lweightname114,2,Lweightdims114,_plamo_weights+912
-.quad Lweightname115,1,Lweightdims115,_plamo_weights+920
-.quad Lweightname116,1,Lweightdims116,_plamo_weights+928
-.quad Lweightname117,2,Lweightdims117,_plamo_weights+936
-.quad Lweightname118,2,Lweightdims118,_plamo_weights+944
-.quad Lweightname119,1,Lweightdims119,_plamo_weights+952
-.quad Lweightname120,1,Lweightdims120,_plamo_weights+960
-.quad Lweightname121,1,Lweightdims121,_plamo_weights+968
-.quad Lweightname122,1,Lweightdims122,_plamo_weights+976
-.quad Lweightname123,2,Lweightdims123,_plamo_weights+984
-.quad Lweightname124,2,Lweightdims124,_plamo_weights+992
-.quad Lweightname125,1,Lweightdims125,_plamo_weights+1000
-.quad Lweightname126,1,Lweightdims126,_plamo_weights+1008
-.quad Lweightname127,2,Lweightdims127,_plamo_weights+1016
-.quad Lweightname128,2,Lweightdims128,_plamo_weights+1024
-.quad Lweightname129,1,Lweightdims129,_plamo_weights+1032
-.quad Lweightname130,1,Lweightdims130,_plamo_weights+1040
-.quad Lweightname131,1,Lweightdims131,_plamo_weights+1048
-.quad Lweightname132,1,Lweightdims132,_plamo_weights+1056
-.quad Lweightname133,2,Lweightdims133,_plamo_weights+1064
-.quad Lweightname134,2,Lweightdims134,_plamo_weights+1072
-.quad Lweightname135,1,Lweightdims135,_plamo_weights+1080
-.quad Lweightname136,1,Lweightdims136,_plamo_weights+1088
-.quad Lweightname137,2,Lweightdims137,_plamo_weights+1096
-.quad Lweightname138,2,Lweightdims138,_plamo_weights+1104
-.quad Lweightname139,1,Lweightdims139,_plamo_weights+1112
-.quad Lweightname140,1,Lweightdims140,_plamo_weights+1120
-.quad Lweightname141,1,Lweightdims141,_plamo_weights+1128
-.quad Lweightname142,1,Lweightdims142,_plamo_weights+1136
-.quad Lweightname143,2,Lweightdims143,_plamo_weights+1144
-.quad Lweightname144,2,Lweightdims144,_plamo_weights+1152
-.quad Lweightname145,1,Lweightdims145,_plamo_weights+1160
-.quad Lweightname146,1,Lweightdims146,_plamo_weights+1168
-.quad Lweightname147,2,Lweightdims147,_plamo_weights+1176
-.quad Lweightname148,2,Lweightdims148,_plamo_weights+1184
-.quad Lweightname149,1,Lweightdims149,_plamo_weights+1192
-.quad Lweightname150,1,Lweightdims150,_plamo_weights+1200
-.quad Lweightname151,1,Lweightdims151,_plamo_weights+1208
-.quad Lweightname152,1,Lweightdims152,_plamo_weights+1216
-.quad Lweightname153,2,Lweightdims153,_plamo_weights+1224
-.quad Lweightname154,2,Lweightdims154,_plamo_weights+1232
-.quad Lweightname155,1,Lweightdims155,_plamo_weights+1240
-.quad Lweightname156,1,Lweightdims156,_plamo_weights+1248
-.quad Lweightname157,2,Lweightdims157,_plamo_weights+1256
-.quad Lweightname158,2,Lweightdims158,_plamo_weights+1264
-.quad Lweightname159,1,Lweightdims159,_plamo_weights+1272
-.quad Lweightname160,1,Lweightdims160,_plamo_weights+1280
-.quad Lweightname161,1,Lweightdims161,_plamo_weights+1288
-.quad Lweightname162,1,Lweightdims162,_plamo_weights+1296
-.quad Lweightname163,2,Lweightdims163,_plamo_weights+1304
-.quad Lweightname164,2,Lweightdims164,_plamo_weights+1312
-.quad Lweightname165,1,Lweightdims165,_plamo_weights+1320
-.quad Lweightname166,1,Lweightdims166,_plamo_weights+1328
-.quad Lweightname167,2,Lweightdims167,_plamo_weights+1336
-.quad Lweightname168,2,Lweightdims168,_plamo_weights+1344
-.quad Lweightname169,1,Lweightdims169,_plamo_weights+1352
-.quad Lweightname170,1,Lweightdims170,_plamo_weights+1360
-.quad Lweightname171,1,Lweightdims171,_plamo_weights+1368
-.quad Lweightname172,1,Lweightdims172,_plamo_weights+1376
-.quad Lweightname173,2,Lweightdims173,_plamo_weights+1384
-.quad Lweightname174,2,Lweightdims174,_plamo_weights+1392
-.quad Lweightname175,1,Lweightdims175,_plamo_weights+1400
-.quad Lweightname176,1,Lweightdims176,_plamo_weights+1408
-.quad Lweightname177,2,Lweightdims177,_plamo_weights+1416
-.quad Lweightname178,2,Lweightdims178,_plamo_weights+1424
-.quad Lweightname179,1,Lweightdims179,_plamo_weights+1432
-.quad Lweightname180,1,Lweightdims180,_plamo_weights+1440
-.quad Lweightname181,1,Lweightdims181,_plamo_weights+1448
-.quad Lweightname182,1,Lweightdims182,_plamo_weights+1456
-.quad Lweightname183,2,Lweightdims183,_plamo_weights+1464
-.quad Lweightname184,2,Lweightdims184,_plamo_weights+1472
-.quad Lweightname185,1,Lweightdims185,_plamo_weights+1480
-.quad Lweightname186,1,Lweightdims186,_plamo_weights+1488
-.quad Lweightname187,2,Lweightdims187,_plamo_weights+1496
-.quad Lweightname188,2,Lweightdims188,_plamo_weights+1504
-.quad Lweightname189,1,Lweightdims189,_plamo_weights+1512
-.quad Lweightname190,1,Lweightdims190,_plamo_weights+1520
-.quad Lweightname191,1,Lweightdims191,_plamo_weights+1528
-.quad Lweightname192,1,Lweightdims192,_plamo_weights+1536
-.quad Lweightname193,2,Lweightdims193,_plamo_weights+1544
-.quad Lweightname194,2,Lweightdims194,_plamo_weights+1552
-.quad Lweightname195,1,Lweightdims195,_plamo_weights+1560
-.quad Lweightname196,1,Lweightdims196,_plamo_weights+1568
-.quad Lweightname197,2,Lweightdims197,_plamo_weights+1576
-.quad Lweightname198,2,Lweightdims198,_plamo_weights+1584
-.quad Lweightname199,1,Lweightdims199,_plamo_weights+1592
-.quad Lweightname200,1,Lweightdims200,_plamo_weights+1600
-.quad Lweightname201,1,Lweightdims201,_plamo_weights+1608
-.quad Lweightname202,1,Lweightdims202,_plamo_weights+1616
-.quad Lweightname203,2,Lweightdims203,_plamo_weights+1624
-.quad Lweightname204,2,Lweightdims204,_plamo_weights+1632
-.quad Lweightname205,1,Lweightdims205,_plamo_weights+1640
-.quad Lweightname206,1,Lweightdims206,_plamo_weights+1648
-.quad Lweightname207,2,Lweightdims207,_plamo_weights+1656
-.quad Lweightname208,2,Lweightdims208,_plamo_weights+1664
-.quad Lweightname209,1,Lweightdims209,_plamo_weights+1672
-.quad Lweightname210,1,Lweightdims210,_plamo_weights+1680
-.quad Lweightname211,1,Lweightdims211,_plamo_weights+1688
-.quad Lweightname212,1,Lweightdims212,_plamo_weights+1696
-.quad Lweightname213,2,Lweightdims213,_plamo_weights+1704
-.quad Lweightname214,2,Lweightdims214,_plamo_weights+1712
-.quad Lweightname215,1,Lweightdims215,_plamo_weights+1720
-.quad Lweightname216,1,Lweightdims216,_plamo_weights+1728
-.quad Lweightname217,2,Lweightdims217,_plamo_weights+1736
-.quad Lweightname218,2,Lweightdims218,_plamo_weights+1744
-.quad Lweightname219,1,Lweightdims219,_plamo_weights+1752
-.quad Lweightname220,1,Lweightdims220,_plamo_weights+1760
-.quad Lweightname221,1,Lweightdims221,_plamo_weights+1768
-.quad Lweightname222,1,Lweightdims222,_plamo_weights+1776
-.quad Lweightname223,2,Lweightdims223,_plamo_weights+1784
-.quad Lweightname224,2,Lweightdims224,_plamo_weights+1792
-.quad Lweightname225,1,Lweightdims225,_plamo_weights+1800
-.quad Lweightname226,1,Lweightdims226,_plamo_weights+1808
-.quad Lweightname227,2,Lweightdims227,_plamo_weights+1816
-.quad Lweightname228,2,Lweightdims228,_plamo_weights+1824
-.quad Lweightname229,1,Lweightdims229,_plamo_weights+1832
-.quad Lweightname230,1,Lweightdims230,_plamo_weights+1840
-.quad Lweightname231,1,Lweightdims231,_plamo_weights+1848
-.quad Lweightname232,1,Lweightdims232,_plamo_weights+1856
-.quad Lweightname233,2,Lweightdims233,_plamo_weights+1864
-.quad Lweightname234,2,Lweightdims234,_plamo_weights+1872
-.quad Lweightname235,1,Lweightdims235,_plamo_weights+1880
-.quad Lweightname236,1,Lweightdims236,_plamo_weights+1888
-.quad Lweightname237,2,Lweightdims237,_plamo_weights+1896
-.quad Lweightname238,2,Lweightdims238,_plamo_weights+1904
-.quad Lweightname239,1,Lweightdims239,_plamo_weights+1912
-.quad Lweightname240,1,Lweightdims240,_plamo_weights+1920
-.quad Lweightname241,1,Lweightdims241,_plamo_weights+1928
-.quad Lweightname242,1,Lweightdims242,_plamo_weights+1936
-.quad Lweightname243,2,Lweightdims243,_plamo_weights+1944
-.quad Lweightname244,2,Lweightdims244,_plamo_weights+1952
-.quad Lweightname245,1,Lweightdims245,_plamo_weights+1960
-.quad Lweightname246,1,Lweightdims246,_plamo_weights+1968
-.quad Lweightname247,2,Lweightdims247,_plamo_weights+1976
-.quad Lweightname248,2,Lweightdims248,_plamo_weights+1984
-.quad Lweightname249,1,Lweightdims249,_plamo_weights+1992
-.quad Lweightname250,1,Lweightdims250,_plamo_weights+2000
-.quad Lweightname251,1,Lweightdims251,_plamo_weights+2008
-.quad Lweightname252,1,Lweightdims252,_plamo_weights+2016
-.quad Lweightname253,2,Lweightdims253,_plamo_weights+2024
-.quad Lweightname254,2,Lweightdims254,_plamo_weights+2032
-.quad Lweightname255,1,Lweightdims255,_plamo_weights+2040
-.quad Lweightname256,1,Lweightdims256,_plamo_weights+2048
-.quad Lweightname257,2,Lweightdims257,_plamo_weights+2056
-.quad Lweightname258,2,Lweightdims258,_plamo_weights+2064
-.quad Lweightname259,1,Lweightdims259,_plamo_weights+2072
-.quad Lweightname260,1,Lweightdims260,_plamo_weights+2080
-.quad Lweightname261,1,Lweightdims261,_plamo_weights+2088
-.quad Lweightname262,1,Lweightdims262,_plamo_weights+2096
-.quad Lweightname263,2,Lweightdims263,_plamo_weights+2104
-.quad Lweightname264,2,Lweightdims264,_plamo_weights+2112
-.quad Lweightname265,1,Lweightdims265,_plamo_weights+2120
-.quad Lweightname266,1,Lweightdims266,_plamo_weights+2128
-.quad Lweightname267,2,Lweightdims267,_plamo_weights+2136
-.quad Lweightname268,2,Lweightdims268,_plamo_weights+2144
-.quad Lweightname269,1,Lweightdims269,_plamo_weights+2152
-.quad Lweightname270,1,Lweightdims270,_plamo_weights+2160
-.quad Lweightname271,1,Lweightdims271,_plamo_weights+2168
-.quad Lweightname272,1,Lweightdims272,_plamo_weights+2176
-.quad Lweightname273,2,Lweightdims273,_plamo_weights+2184
-.quad Lweightname274,2,Lweightdims274,_plamo_weights+2192
-.quad Lweightname275,1,Lweightdims275,_plamo_weights+2200
-.quad Lweightname276,1,Lweightdims276,_plamo_weights+2208
-.quad Lweightname277,2,Lweightdims277,_plamo_weights+2216
-.quad Lweightname278,2,Lweightdims278,_plamo_weights+2224
-.quad Lweightname279,1,Lweightdims279,_plamo_weights+2232
-.quad Lweightname280,1,Lweightdims280,_plamo_weights+2240
-.quad Lweightname281,1,Lweightdims281,_plamo_weights+2248
-.quad Lweightname282,1,Lweightdims282,_plamo_weights+2256
-.quad Lweightname283,2,Lweightdims283,_plamo_weights+2264
-.quad Lweightname284,2,Lweightdims284,_plamo_weights+2272
-.quad Lweightname285,1,Lweightdims285,_plamo_weights+2280
-.quad Lweightname286,1,Lweightdims286,_plamo_weights+2288
-.quad Lweightname287,2,Lweightdims287,_plamo_weights+2296
-.quad Lweightname288,2,Lweightdims288,_plamo_weights+2304
-.quad Lweightname289,1,Lweightdims289,_plamo_weights+2312
-.quad Lweightname290,1,Lweightdims290,_plamo_weights+2320
-.quad Lweightname291,1,Lweightdims291,_plamo_weights+2328
-.quad Lweightname292,1,Lweightdims292,_plamo_weights+2336
-.quad Lweightname293,2,Lweightdims293,_plamo_weights+2344
-.quad Lweightname294,2,Lweightdims294,_plamo_weights+2352
-.quad Lweightname295,1,Lweightdims295,_plamo_weights+2360
-.quad Lweightname296,1,Lweightdims296,_plamo_weights+2368
-.quad Lweightname297,2,Lweightdims297,_plamo_weights+2376
-.quad Lweightname298,2,Lweightdims298,_plamo_weights+2384
-.quad Lweightname299,1,Lweightdims299,_plamo_weights+2392
-.quad Lweightname300,1,Lweightdims300,_plamo_weights+2400
-.quad Lweightname301,1,Lweightdims301,_plamo_weights+2408
-.quad Lweightname302,1,Lweightdims302,_plamo_weights+2416
-.quad Lweightname303,2,Lweightdims303,_plamo_weights+2424
-.quad Lweightname304,2,Lweightdims304,_plamo_weights+2432
-.quad Lweightname305,1,Lweightdims305,_plamo_weights+2440
-.quad Lweightname306,1,Lweightdims306,_plamo_weights+2448
-.quad Lweightname307,2,Lweightdims307,_plamo_weights+2456
-.quad Lweightname308,2,Lweightdims308,_plamo_weights+2464
-.quad Lweightname309,1,Lweightdims309,_plamo_weights+2472
-.quad Lweightname310,1,Lweightdims310,_plamo_weights+2480
-.quad Lweightname311,1,Lweightdims311,_plamo_weights+2488
-.quad Lweightname312,1,Lweightdims312,_plamo_weights+2496
-.quad Lweightname313,2,Lweightdims313,_plamo_weights+2504
-.quad Lweightname314,2,Lweightdims314,_plamo_weights+2512
-.quad Lweightname315,1,Lweightdims315,_plamo_weights+2520
-.quad Lweightname316,1,Lweightdims316,_plamo_weights+2528
-.quad Lweightname317,2,Lweightdims317,_plamo_weights+2536
-.quad Lweightname318,2,Lweightdims318,_plamo_weights+2544
-.quad Lweightname319,1,Lweightdims319,_plamo_weights+2552
-.quad Lweightname320,1,Lweightdims320,_plamo_weights+2560
-.quad Lweightname321,1,Lweightdims321,_plamo_weights+2568
-.quad Lweightname322,1,Lweightdims322,_plamo_weights+2576
-.quad 0,0,0,0
-.section __TEXT,__const
+.quad Lweightname0, 2, Lweightdims0, _plamo_weights+0
+.quad Lweightname1, 1, Lweightdims1, _plamo_weights+8
+.quad Lweightname2, 2, Lweightdims2, _plamo_weights+16
+.quad Lweightname3, 2, Lweightdims3, _plamo_weights+24
+.quad Lweightname4, 2, Lweightdims4, _plamo_weights+32
+.quad Lweightname5, 1, Lweightdims5, _plamo_weights+40
+.quad Lweightname6, 1, Lweightdims6, _plamo_weights+48
+.quad Lweightname7, 2, Lweightdims7, _plamo_weights+56
+.quad Lweightname8, 2, Lweightdims8, _plamo_weights+64
+.quad Lweightname9, 1, Lweightdims9, _plamo_weights+72
+.quad Lweightname10, 1, Lweightdims10, _plamo_weights+80
+.quad Lweightname11, 1, Lweightdims11, _plamo_weights+88
+.quad Lweightname12, 1, Lweightdims12, _plamo_weights+96
+.quad Lweightname13, 2, Lweightdims13, _plamo_weights+104
+.quad Lweightname14, 2, Lweightdims14, _plamo_weights+112
+.quad Lweightname15, 1, Lweightdims15, _plamo_weights+120
+.quad Lweightname16, 1, Lweightdims16, _plamo_weights+128
+.quad Lweightname17, 2, Lweightdims17, _plamo_weights+136
+.quad Lweightname18, 2, Lweightdims18, _plamo_weights+144
+.quad Lweightname19, 1, Lweightdims19, _plamo_weights+152
+.quad Lweightname20, 1, Lweightdims20, _plamo_weights+160
+.quad Lweightname21, 1, Lweightdims21, _plamo_weights+168
+.quad Lweightname22, 1, Lweightdims22, _plamo_weights+176
+.quad Lweightname23, 2, Lweightdims23, _plamo_weights+184
+.quad Lweightname24, 2, Lweightdims24, _plamo_weights+192
+.quad Lweightname25, 1, Lweightdims25, _plamo_weights+200
+.quad Lweightname26, 1, Lweightdims26, _plamo_weights+208
+.quad Lweightname27, 2, Lweightdims27, _plamo_weights+216
+.quad Lweightname28, 2, Lweightdims28, _plamo_weights+224
+.quad Lweightname29, 1, Lweightdims29, _plamo_weights+232
+.quad Lweightname30, 1, Lweightdims30, _plamo_weights+240
+.quad Lweightname31, 1, Lweightdims31, _plamo_weights+248
+.quad Lweightname32, 1, Lweightdims32, _plamo_weights+256
+.quad Lweightname33, 2, Lweightdims33, _plamo_weights+264
+.quad Lweightname34, 2, Lweightdims34, _plamo_weights+272
+.quad Lweightname35, 1, Lweightdims35, _plamo_weights+280
+.quad Lweightname36, 1, Lweightdims36, _plamo_weights+288
+.quad Lweightname37, 2, Lweightdims37, _plamo_weights+296
+.quad Lweightname38, 2, Lweightdims38, _plamo_weights+304
+.quad Lweightname39, 1, Lweightdims39, _plamo_weights+312
+.quad Lweightname40, 1, Lweightdims40, _plamo_weights+320
+.quad Lweightname41, 1, Lweightdims41, _plamo_weights+328
+.quad Lweightname42, 1, Lweightdims42, _plamo_weights+336
+.quad Lweightname43, 2, Lweightdims43, _plamo_weights+344
+.quad Lweightname44, 2, Lweightdims44, _plamo_weights+352
+.quad Lweightname45, 1, Lweightdims45, _plamo_weights+360
+.quad Lweightname46, 1, Lweightdims46, _plamo_weights+368
+.quad Lweightname47, 2, Lweightdims47, _plamo_weights+376
+.quad Lweightname48, 2, Lweightdims48, _plamo_weights+384
+.quad Lweightname49, 1, Lweightdims49, _plamo_weights+392
+.quad Lweightname50, 1, Lweightdims50, _plamo_weights+400
+.quad Lweightname51, 1, Lweightdims51, _plamo_weights+408
+.quad Lweightname52, 1, Lweightdims52, _plamo_weights+416
+.quad Lweightname53, 2, Lweightdims53, _plamo_weights+424
+.quad Lweightname54, 2, Lweightdims54, _plamo_weights+432
+.quad Lweightname55, 1, Lweightdims55, _plamo_weights+440
+.quad Lweightname56, 1, Lweightdims56, _plamo_weights+448
+.quad Lweightname57, 2, Lweightdims57, _plamo_weights+456
+.quad Lweightname58, 2, Lweightdims58, _plamo_weights+464
+.quad Lweightname59, 1, Lweightdims59, _plamo_weights+472
+.quad Lweightname60, 1, Lweightdims60, _plamo_weights+480
+.quad Lweightname61, 1, Lweightdims61, _plamo_weights+488
+.quad Lweightname62, 1, Lweightdims62, _plamo_weights+496
+.quad Lweightname63, 2, Lweightdims63, _plamo_weights+504
+.quad Lweightname64, 2, Lweightdims64, _plamo_weights+512
+.quad Lweightname65, 1, Lweightdims65, _plamo_weights+520
+.quad Lweightname66, 1, Lweightdims66, _plamo_weights+528
+.quad Lweightname67, 2, Lweightdims67, _plamo_weights+536
+.quad Lweightname68, 2, Lweightdims68, _plamo_weights+544
+.quad Lweightname69, 1, Lweightdims69, _plamo_weights+552
+.quad Lweightname70, 1, Lweightdims70, _plamo_weights+560
+.quad Lweightname71, 1, Lweightdims71, _plamo_weights+568
+.quad Lweightname72, 1, Lweightdims72, _plamo_weights+576
+.quad Lweightname73, 2, Lweightdims73, _plamo_weights+584
+.quad Lweightname74, 2, Lweightdims74, _plamo_weights+592
+.quad Lweightname75, 1, Lweightdims75, _plamo_weights+600
+.quad Lweightname76, 1, Lweightdims76, _plamo_weights+608
+.quad Lweightname77, 2, Lweightdims77, _plamo_weights+616
+.quad Lweightname78, 2, Lweightdims78, _plamo_weights+624
+.quad Lweightname79, 1, Lweightdims79, _plamo_weights+632
+.quad Lweightname80, 1, Lweightdims80, _plamo_weights+640
+.quad Lweightname81, 1, Lweightdims81, _plamo_weights+648
+.quad Lweightname82, 1, Lweightdims82, _plamo_weights+656
+.quad Lweightname83, 2, Lweightdims83, _plamo_weights+664
+.quad Lweightname84, 2, Lweightdims84, _plamo_weights+672
+.quad Lweightname85, 1, Lweightdims85, _plamo_weights+680
+.quad Lweightname86, 1, Lweightdims86, _plamo_weights+688
+.quad Lweightname87, 2, Lweightdims87, _plamo_weights+696
+.quad Lweightname88, 2, Lweightdims88, _plamo_weights+704
+.quad Lweightname89, 1, Lweightdims89, _plamo_weights+712
+.quad Lweightname90, 1, Lweightdims90, _plamo_weights+720
+.quad Lweightname91, 1, Lweightdims91, _plamo_weights+728
+.quad Lweightname92, 1, Lweightdims92, _plamo_weights+736
+.quad Lweightname93, 2, Lweightdims93, _plamo_weights+744
+.quad Lweightname94, 2, Lweightdims94, _plamo_weights+752
+.quad Lweightname95, 1, Lweightdims95, _plamo_weights+760
+.quad Lweightname96, 1, Lweightdims96, _plamo_weights+768
+.quad Lweightname97, 2, Lweightdims97, _plamo_weights+776
+.quad Lweightname98, 2, Lweightdims98, _plamo_weights+784
+.quad Lweightname99, 1, Lweightdims99, _plamo_weights+792
+.quad Lweightname100, 1, Lweightdims100, _plamo_weights+800
+.quad Lweightname101, 1, Lweightdims101, _plamo_weights+808
+.quad Lweightname102, 1, Lweightdims102, _plamo_weights+816
+.quad Lweightname103, 2, Lweightdims103, _plamo_weights+824
+.quad Lweightname104, 2, Lweightdims104, _plamo_weights+832
+.quad Lweightname105, 1, Lweightdims105, _plamo_weights+840
+.quad Lweightname106, 1, Lweightdims106, _plamo_weights+848
+.quad Lweightname107, 2, Lweightdims107, _plamo_weights+856
+.quad Lweightname108, 2, Lweightdims108, _plamo_weights+864
+.quad Lweightname109, 1, Lweightdims109, _plamo_weights+872
+.quad Lweightname110, 1, Lweightdims110, _plamo_weights+880
+.quad Lweightname111, 1, Lweightdims111, _plamo_weights+888
+.quad Lweightname112, 1, Lweightdims112, _plamo_weights+896
+.quad Lweightname113, 2, Lweightdims113, _plamo_weights+904
+.quad Lweightname114, 2, Lweightdims114, _plamo_weights+912
+.quad Lweightname115, 1, Lweightdims115, _plamo_weights+920
+.quad Lweightname116, 1, Lweightdims116, _plamo_weights+928
+.quad Lweightname117, 2, Lweightdims117, _plamo_weights+936
+.quad Lweightname118, 2, Lweightdims118, _plamo_weights+944
+.quad Lweightname119, 1, Lweightdims119, _plamo_weights+952
+.quad Lweightname120, 1, Lweightdims120, _plamo_weights+960
+.quad Lweightname121, 1, Lweightdims121, _plamo_weights+968
+.quad Lweightname122, 1, Lweightdims122, _plamo_weights+976
+.quad Lweightname123, 2, Lweightdims123, _plamo_weights+984
+.quad Lweightname124, 2, Lweightdims124, _plamo_weights+992
+.quad Lweightname125, 1, Lweightdims125, _plamo_weights+1000
+.quad Lweightname126, 1, Lweightdims126, _plamo_weights+1008
+.quad Lweightname127, 2, Lweightdims127, _plamo_weights+1016
+.quad Lweightname128, 2, Lweightdims128, _plamo_weights+1024
+.quad Lweightname129, 1, Lweightdims129, _plamo_weights+1032
+.quad Lweightname130, 1, Lweightdims130, _plamo_weights+1040
+.quad Lweightname131, 1, Lweightdims131, _plamo_weights+1048
+.quad Lweightname132, 1, Lweightdims132, _plamo_weights+1056
+.quad Lweightname133, 2, Lweightdims133, _plamo_weights+1064
+.quad Lweightname134, 2, Lweightdims134, _plamo_weights+1072
+.quad Lweightname135, 1, Lweightdims135, _plamo_weights+1080
+.quad Lweightname136, 1, Lweightdims136, _plamo_weights+1088
+.quad Lweightname137, 2, Lweightdims137, _plamo_weights+1096
+.quad Lweightname138, 2, Lweightdims138, _plamo_weights+1104
+.quad Lweightname139, 1, Lweightdims139, _plamo_weights+1112
+.quad Lweightname140, 1, Lweightdims140, _plamo_weights+1120
+.quad Lweightname141, 1, Lweightdims141, _plamo_weights+1128
+.quad Lweightname142, 1, Lweightdims142, _plamo_weights+1136
+.quad Lweightname143, 2, Lweightdims143, _plamo_weights+1144
+.quad Lweightname144, 2, Lweightdims144, _plamo_weights+1152
+.quad Lweightname145, 1, Lweightdims145, _plamo_weights+1160
+.quad Lweightname146, 1, Lweightdims146, _plamo_weights+1168
+.quad Lweightname147, 2, Lweightdims147, _plamo_weights+1176
+.quad Lweightname148, 2, Lweightdims148, _plamo_weights+1184
+.quad Lweightname149, 1, Lweightdims149, _plamo_weights+1192
+.quad Lweightname150, 1, Lweightdims150, _plamo_weights+1200
+.quad Lweightname151, 1, Lweightdims151, _plamo_weights+1208
+.quad Lweightname152, 1, Lweightdims152, _plamo_weights+1216
+.quad Lweightname153, 2, Lweightdims153, _plamo_weights+1224
+.quad Lweightname154, 2, Lweightdims154, _plamo_weights+1232
+.quad Lweightname155, 1, Lweightdims155, _plamo_weights+1240
+.quad Lweightname156, 1, Lweightdims156, _plamo_weights+1248
+.quad Lweightname157, 2, Lweightdims157, _plamo_weights+1256
+.quad Lweightname158, 2, Lweightdims158, _plamo_weights+1264
+.quad Lweightname159, 1, Lweightdims159, _plamo_weights+1272
+.quad Lweightname160, 1, Lweightdims160, _plamo_weights+1280
+.quad Lweightname161, 1, Lweightdims161, _plamo_weights+1288
+.quad Lweightname162, 1, Lweightdims162, _plamo_weights+1296
+.quad Lweightname163, 2, Lweightdims163, _plamo_weights+1304
+.quad Lweightname164, 2, Lweightdims164, _plamo_weights+1312
+.quad Lweightname165, 1, Lweightdims165, _plamo_weights+1320
+.quad Lweightname166, 1, Lweightdims166, _plamo_weights+1328
+.quad Lweightname167, 2, Lweightdims167, _plamo_weights+1336
+.quad Lweightname168, 2, Lweightdims168, _plamo_weights+1344
+.quad Lweightname169, 1, Lweightdims169, _plamo_weights+1352
+.quad Lweightname170, 1, Lweightdims170, _plamo_weights+1360
+.quad Lweightname171, 1, Lweightdims171, _plamo_weights+1368
+.quad Lweightname172, 1, Lweightdims172, _plamo_weights+1376
+.quad Lweightname173, 2, Lweightdims173, _plamo_weights+1384
+.quad Lweightname174, 2, Lweightdims174, _plamo_weights+1392
+.quad Lweightname175, 1, Lweightdims175, _plamo_weights+1400
+.quad Lweightname176, 1, Lweightdims176, _plamo_weights+1408
+.quad Lweightname177, 2, Lweightdims177, _plamo_weights+1416
+.quad Lweightname178, 2, Lweightdims178, _plamo_weights+1424
+.quad Lweightname179, 1, Lweightdims179, _plamo_weights+1432
+.quad Lweightname180, 1, Lweightdims180, _plamo_weights+1440
+.quad Lweightname181, 1, Lweightdims181, _plamo_weights+1448
+.quad Lweightname182, 1, Lweightdims182, _plamo_weights+1456
+.quad Lweightname183, 2, Lweightdims183, _plamo_weights+1464
+.quad Lweightname184, 2, Lweightdims184, _plamo_weights+1472
+.quad Lweightname185, 1, Lweightdims185, _plamo_weights+1480
+.quad Lweightname186, 1, Lweightdims186, _plamo_weights+1488
+.quad Lweightname187, 2, Lweightdims187, _plamo_weights+1496
+.quad Lweightname188, 2, Lweightdims188, _plamo_weights+1504
+.quad Lweightname189, 1, Lweightdims189, _plamo_weights+1512
+.quad Lweightname190, 1, Lweightdims190, _plamo_weights+1520
+.quad Lweightname191, 1, Lweightdims191, _plamo_weights+1528
+.quad Lweightname192, 1, Lweightdims192, _plamo_weights+1536
+.quad Lweightname193, 2, Lweightdims193, _plamo_weights+1544
+.quad Lweightname194, 2, Lweightdims194, _plamo_weights+1552
+.quad Lweightname195, 1, Lweightdims195, _plamo_weights+1560
+.quad Lweightname196, 1, Lweightdims196, _plamo_weights+1568
+.quad Lweightname197, 2, Lweightdims197, _plamo_weights+1576
+.quad Lweightname198, 2, Lweightdims198, _plamo_weights+1584
+.quad Lweightname199, 1, Lweightdims199, _plamo_weights+1592
+.quad Lweightname200, 1, Lweightdims200, _plamo_weights+1600
+.quad Lweightname201, 1, Lweightdims201, _plamo_weights+1608
+.quad Lweightname202, 1, Lweightdims202, _plamo_weights+1616
+.quad Lweightname203, 2, Lweightdims203, _plamo_weights+1624
+.quad Lweightname204, 2, Lweightdims204, _plamo_weights+1632
+.quad Lweightname205, 1, Lweightdims205, _plamo_weights+1640
+.quad Lweightname206, 1, Lweightdims206, _plamo_weights+1648
+.quad Lweightname207, 2, Lweightdims207, _plamo_weights+1656
+.quad Lweightname208, 2, Lweightdims208, _plamo_weights+1664
+.quad Lweightname209, 1, Lweightdims209, _plamo_weights+1672
+.quad Lweightname210, 1, Lweightdims210, _plamo_weights+1680
+.quad Lweightname211, 1, Lweightdims211, _plamo_weights+1688
+.quad Lweightname212, 1, Lweightdims212, _plamo_weights+1696
+.quad Lweightname213, 2, Lweightdims213, _plamo_weights+1704
+.quad Lweightname214, 2, Lweightdims214, _plamo_weights+1712
+.quad Lweightname215, 1, Lweightdims215, _plamo_weights+1720
+.quad Lweightname216, 1, Lweightdims216, _plamo_weights+1728
+.quad Lweightname217, 2, Lweightdims217, _plamo_weights+1736
+.quad Lweightname218, 2, Lweightdims218, _plamo_weights+1744
+.quad Lweightname219, 1, Lweightdims219, _plamo_weights+1752
+.quad Lweightname220, 1, Lweightdims220, _plamo_weights+1760
+.quad Lweightname221, 1, Lweightdims221, _plamo_weights+1768
+.quad Lweightname222, 1, Lweightdims222, _plamo_weights+1776
+.quad Lweightname223, 2, Lweightdims223, _plamo_weights+1784
+.quad Lweightname224, 2, Lweightdims224, _plamo_weights+1792
+.quad Lweightname225, 1, Lweightdims225, _plamo_weights+1800
+.quad Lweightname226, 1, Lweightdims226, _plamo_weights+1808
+.quad Lweightname227, 2, Lweightdims227, _plamo_weights+1816
+.quad Lweightname228, 2, Lweightdims228, _plamo_weights+1824
+.quad Lweightname229, 1, Lweightdims229, _plamo_weights+1832
+.quad Lweightname230, 1, Lweightdims230, _plamo_weights+1840
+.quad Lweightname231, 1, Lweightdims231, _plamo_weights+1848
+.quad Lweightname232, 1, Lweightdims232, _plamo_weights+1856
+.quad Lweightname233, 2, Lweightdims233, _plamo_weights+1864
+.quad Lweightname234, 2, Lweightdims234, _plamo_weights+1872
+.quad Lweightname235, 1, Lweightdims235, _plamo_weights+1880
+.quad Lweightname236, 1, Lweightdims236, _plamo_weights+1888
+.quad Lweightname237, 2, Lweightdims237, _plamo_weights+1896
+.quad Lweightname238, 2, Lweightdims238, _plamo_weights+1904
+.quad Lweightname239, 1, Lweightdims239, _plamo_weights+1912
+.quad Lweightname240, 1, Lweightdims240, _plamo_weights+1920
+.quad Lweightname241, 1, Lweightdims241, _plamo_weights+1928
+.quad Lweightname242, 1, Lweightdims242, _plamo_weights+1936
+.quad Lweightname243, 2, Lweightdims243, _plamo_weights+1944
+.quad Lweightname244, 2, Lweightdims244, _plamo_weights+1952
+.quad Lweightname245, 1, Lweightdims245, _plamo_weights+1960
+.quad Lweightname246, 1, Lweightdims246, _plamo_weights+1968
+.quad Lweightname247, 2, Lweightdims247, _plamo_weights+1976
+.quad Lweightname248, 2, Lweightdims248, _plamo_weights+1984
+.quad Lweightname249, 1, Lweightdims249, _plamo_weights+1992
+.quad Lweightname250, 1, Lweightdims250, _plamo_weights+2000
+.quad Lweightname251, 1, Lweightdims251, _plamo_weights+2008
+.quad Lweightname252, 1, Lweightdims252, _plamo_weights+2016
+.quad Lweightname253, 2, Lweightdims253, _plamo_weights+2024
+.quad Lweightname254, 2, Lweightdims254, _plamo_weights+2032
+.quad Lweightname255, 1, Lweightdims255, _plamo_weights+2040
+.quad Lweightname256, 1, Lweightdims256, _plamo_weights+2048
+.quad Lweightname257, 2, Lweightdims257, _plamo_weights+2056
+.quad Lweightname258, 2, Lweightdims258, _plamo_weights+2064
+.quad Lweightname259, 1, Lweightdims259, _plamo_weights+2072
+.quad Lweightname260, 1, Lweightdims260, _plamo_weights+2080
+.quad Lweightname261, 1, Lweightdims261, _plamo_weights+2088
+.quad Lweightname262, 1, Lweightdims262, _plamo_weights+2096
+.quad Lweightname263, 2, Lweightdims263, _plamo_weights+2104
+.quad Lweightname264, 2, Lweightdims264, _plamo_weights+2112
+.quad Lweightname265, 1, Lweightdims265, _plamo_weights+2120
+.quad Lweightname266, 1, Lweightdims266, _plamo_weights+2128
+.quad Lweightname267, 2, Lweightdims267, _plamo_weights+2136
+.quad Lweightname268, 2, Lweightdims268, _plamo_weights+2144
+.quad Lweightname269, 1, Lweightdims269, _plamo_weights+2152
+.quad Lweightname270, 1, Lweightdims270, _plamo_weights+2160
+.quad Lweightname271, 1, Lweightdims271, _plamo_weights+2168
+.quad Lweightname272, 1, Lweightdims272, _plamo_weights+2176
+.quad Lweightname273, 2, Lweightdims273, _plamo_weights+2184
+.quad Lweightname274, 2, Lweightdims274, _plamo_weights+2192
+.quad Lweightname275, 1, Lweightdims275, _plamo_weights+2200
+.quad Lweightname276, 1, Lweightdims276, _plamo_weights+2208
+.quad Lweightname277, 2, Lweightdims277, _plamo_weights+2216
+.quad Lweightname278, 2, Lweightdims278, _plamo_weights+2224
+.quad Lweightname279, 1, Lweightdims279, _plamo_weights+2232
+.quad Lweightname280, 1, Lweightdims280, _plamo_weights+2240
+.quad Lweightname281, 1, Lweightdims281, _plamo_weights+2248
+.quad Lweightname282, 1, Lweightdims282, _plamo_weights+2256
+.quad Lweightname283, 2, Lweightdims283, _plamo_weights+2264
+.quad Lweightname284, 2, Lweightdims284, _plamo_weights+2272
+.quad Lweightname285, 1, Lweightdims285, _plamo_weights+2280
+.quad Lweightname286, 1, Lweightdims286, _plamo_weights+2288
+.quad Lweightname287, 2, Lweightdims287, _plamo_weights+2296
+.quad Lweightname288, 2, Lweightdims288, _plamo_weights+2304
+.quad Lweightname289, 1, Lweightdims289, _plamo_weights+2312
+.quad Lweightname290, 1, Lweightdims290, _plamo_weights+2320
+.quad Lweightname291, 1, Lweightdims291, _plamo_weights+2328
+.quad Lweightname292, 1, Lweightdims292, _plamo_weights+2336
+.quad Lweightname293, 2, Lweightdims293, _plamo_weights+2344
+.quad Lweightname294, 2, Lweightdims294, _plamo_weights+2352
+.quad Lweightname295, 1, Lweightdims295, _plamo_weights+2360
+.quad Lweightname296, 1, Lweightdims296, _plamo_weights+2368
+.quad Lweightname297, 2, Lweightdims297, _plamo_weights+2376
+.quad Lweightname298, 2, Lweightdims298, _plamo_weights+2384
+.quad Lweightname299, 1, Lweightdims299, _plamo_weights+2392
+.quad Lweightname300, 1, Lweightdims300, _plamo_weights+2400
+.quad Lweightname301, 1, Lweightdims301, _plamo_weights+2408
+.quad Lweightname302, 1, Lweightdims302, _plamo_weights+2416
+.quad Lweightname303, 2, Lweightdims303, _plamo_weights+2424
+.quad Lweightname304, 2, Lweightdims304, _plamo_weights+2432
+.quad Lweightname305, 1, Lweightdims305, _plamo_weights+2440
+.quad Lweightname306, 1, Lweightdims306, _plamo_weights+2448
+.quad Lweightname307, 2, Lweightdims307, _plamo_weights+2456
+.quad Lweightname308, 2, Lweightdims308, _plamo_weights+2464
+.quad Lweightname309, 1, Lweightdims309, _plamo_weights+2472
+.quad Lweightname310, 1, Lweightdims310, _plamo_weights+2480
+.quad Lweightname311, 1, Lweightdims311, _plamo_weights+2488
+.quad Lweightname312, 1, Lweightdims312, _plamo_weights+2496
+.quad Lweightname313, 2, Lweightdims313, _plamo_weights+2504
+.quad Lweightname314, 2, Lweightdims314, _plamo_weights+2512
+.quad Lweightname315, 1, Lweightdims315, _plamo_weights+2520
+.quad Lweightname316, 1, Lweightdims316, _plamo_weights+2528
+.quad Lweightname317, 2, Lweightdims317, _plamo_weights+2536
+.quad Lweightname318, 2, Lweightdims318, _plamo_weights+2544
+.quad Lweightname319, 1, Lweightdims319, _plamo_weights+2552
+.quad Lweightname320, 1, Lweightdims320, _plamo_weights+2560
+.quad Lweightname321, 1, Lweightdims321, _plamo_weights+2568
+.quad Lweightname322, 1, Lweightdims322, _plamo_weights+2576
+.quad 0, 0, 0, 0
+.section __TEXT, __const
 Lweightname0: .asciz "model.embed_tokens.weight"
 .p2align 3
-Lweightdims0: .quad 107520,4096
+Lweightdims0: .quad 107520, 4096
 Lweightname1: .asciz "model.norm.weight"
 .p2align 3
 Lweightdims1: .quad 4096
 Lweightname2: .asciz "lm_head.weight"
 .p2align 3
-Lweightdims2: .quad 107520,4096
+Lweightdims2: .quad 107520, 4096
 Lweightname3: .asciz "model.layers.layers.0.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims3: .quad 5120,4096
+Lweightdims3: .quad 5120, 4096
 Lweightname4: .asciz "model.layers.layers.0.mixer.o_proj.weight"
 .p2align 3
-Lweightdims4: .quad 4096,4096
+Lweightdims4: .quad 4096, 4096
 Lweightname5: .asciz "model.layers.layers.0.mixer.q_norm.weight"
 .p2align 3
 Lweightdims5: .quad 128
@@ -351,10 +351,10 @@ Lweightname6: .asciz "model.layers.layers.0.mixer.k_norm.weight"
 Lweightdims6: .quad 128
 Lweightname7: .asciz "model.layers.layers.0.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims7: .quad 32768,4096
+Lweightdims7: .quad 32768, 4096
 Lweightname8: .asciz "model.layers.layers.0.mlp.down_proj.weight"
 .p2align 3
-Lweightdims8: .quad 4096,16384
+Lweightdims8: .quad 4096, 16384
 Lweightname9: .asciz "model.layers.layers.0.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims9: .quad 4096
@@ -369,10 +369,10 @@ Lweightname12: .asciz "model.layers.layers.0.post_mlp_norm.weight"
 Lweightdims12: .quad 4096
 Lweightname13: .asciz "model.layers.layers.1.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims13: .quad 5120,4096
+Lweightdims13: .quad 5120, 4096
 Lweightname14: .asciz "model.layers.layers.1.mixer.o_proj.weight"
 .p2align 3
-Lweightdims14: .quad 4096,4096
+Lweightdims14: .quad 4096, 4096
 Lweightname15: .asciz "model.layers.layers.1.mixer.q_norm.weight"
 .p2align 3
 Lweightdims15: .quad 128
@@ -381,10 +381,10 @@ Lweightname16: .asciz "model.layers.layers.1.mixer.k_norm.weight"
 Lweightdims16: .quad 128
 Lweightname17: .asciz "model.layers.layers.1.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims17: .quad 32768,4096
+Lweightdims17: .quad 32768, 4096
 Lweightname18: .asciz "model.layers.layers.1.mlp.down_proj.weight"
 .p2align 3
-Lweightdims18: .quad 4096,16384
+Lweightdims18: .quad 4096, 16384
 Lweightname19: .asciz "model.layers.layers.1.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims19: .quad 4096
@@ -399,10 +399,10 @@ Lweightname22: .asciz "model.layers.layers.1.post_mlp_norm.weight"
 Lweightdims22: .quad 4096
 Lweightname23: .asciz "model.layers.layers.2.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims23: .quad 5120,4096
+Lweightdims23: .quad 5120, 4096
 Lweightname24: .asciz "model.layers.layers.2.mixer.o_proj.weight"
 .p2align 3
-Lweightdims24: .quad 4096,4096
+Lweightdims24: .quad 4096, 4096
 Lweightname25: .asciz "model.layers.layers.2.mixer.q_norm.weight"
 .p2align 3
 Lweightdims25: .quad 128
@@ -411,10 +411,10 @@ Lweightname26: .asciz "model.layers.layers.2.mixer.k_norm.weight"
 Lweightdims26: .quad 128
 Lweightname27: .asciz "model.layers.layers.2.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims27: .quad 32768,4096
+Lweightdims27: .quad 32768, 4096
 Lweightname28: .asciz "model.layers.layers.2.mlp.down_proj.weight"
 .p2align 3
-Lweightdims28: .quad 4096,16384
+Lweightdims28: .quad 4096, 16384
 Lweightname29: .asciz "model.layers.layers.2.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims29: .quad 4096
@@ -429,10 +429,10 @@ Lweightname32: .asciz "model.layers.layers.2.post_mlp_norm.weight"
 Lweightdims32: .quad 4096
 Lweightname33: .asciz "model.layers.layers.3.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims33: .quad 5120,4096
+Lweightdims33: .quad 5120, 4096
 Lweightname34: .asciz "model.layers.layers.3.mixer.o_proj.weight"
 .p2align 3
-Lweightdims34: .quad 4096,4096
+Lweightdims34: .quad 4096, 4096
 Lweightname35: .asciz "model.layers.layers.3.mixer.q_norm.weight"
 .p2align 3
 Lweightdims35: .quad 128
@@ -441,10 +441,10 @@ Lweightname36: .asciz "model.layers.layers.3.mixer.k_norm.weight"
 Lweightdims36: .quad 128
 Lweightname37: .asciz "model.layers.layers.3.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims37: .quad 32768,4096
+Lweightdims37: .quad 32768, 4096
 Lweightname38: .asciz "model.layers.layers.3.mlp.down_proj.weight"
 .p2align 3
-Lweightdims38: .quad 4096,16384
+Lweightdims38: .quad 4096, 16384
 Lweightname39: .asciz "model.layers.layers.3.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims39: .quad 4096
@@ -459,10 +459,10 @@ Lweightname42: .asciz "model.layers.layers.3.post_mlp_norm.weight"
 Lweightdims42: .quad 4096
 Lweightname43: .asciz "model.layers.layers.4.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims43: .quad 5120,4096
+Lweightdims43: .quad 5120, 4096
 Lweightname44: .asciz "model.layers.layers.4.mixer.o_proj.weight"
 .p2align 3
-Lweightdims44: .quad 4096,4096
+Lweightdims44: .quad 4096, 4096
 Lweightname45: .asciz "model.layers.layers.4.mixer.q_norm.weight"
 .p2align 3
 Lweightdims45: .quad 128
@@ -471,10 +471,10 @@ Lweightname46: .asciz "model.layers.layers.4.mixer.k_norm.weight"
 Lweightdims46: .quad 128
 Lweightname47: .asciz "model.layers.layers.4.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims47: .quad 32768,4096
+Lweightdims47: .quad 32768, 4096
 Lweightname48: .asciz "model.layers.layers.4.mlp.down_proj.weight"
 .p2align 3
-Lweightdims48: .quad 4096,16384
+Lweightdims48: .quad 4096, 16384
 Lweightname49: .asciz "model.layers.layers.4.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims49: .quad 4096
@@ -489,10 +489,10 @@ Lweightname52: .asciz "model.layers.layers.4.post_mlp_norm.weight"
 Lweightdims52: .quad 4096
 Lweightname53: .asciz "model.layers.layers.5.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims53: .quad 5120,4096
+Lweightdims53: .quad 5120, 4096
 Lweightname54: .asciz "model.layers.layers.5.mixer.o_proj.weight"
 .p2align 3
-Lweightdims54: .quad 4096,4096
+Lweightdims54: .quad 4096, 4096
 Lweightname55: .asciz "model.layers.layers.5.mixer.q_norm.weight"
 .p2align 3
 Lweightdims55: .quad 128
@@ -501,10 +501,10 @@ Lweightname56: .asciz "model.layers.layers.5.mixer.k_norm.weight"
 Lweightdims56: .quad 128
 Lweightname57: .asciz "model.layers.layers.5.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims57: .quad 32768,4096
+Lweightdims57: .quad 32768, 4096
 Lweightname58: .asciz "model.layers.layers.5.mlp.down_proj.weight"
 .p2align 3
-Lweightdims58: .quad 4096,16384
+Lweightdims58: .quad 4096, 16384
 Lweightname59: .asciz "model.layers.layers.5.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims59: .quad 4096
@@ -519,10 +519,10 @@ Lweightname62: .asciz "model.layers.layers.5.post_mlp_norm.weight"
 Lweightdims62: .quad 4096
 Lweightname63: .asciz "model.layers.layers.6.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims63: .quad 5120,4096
+Lweightdims63: .quad 5120, 4096
 Lweightname64: .asciz "model.layers.layers.6.mixer.o_proj.weight"
 .p2align 3
-Lweightdims64: .quad 4096,4096
+Lweightdims64: .quad 4096, 4096
 Lweightname65: .asciz "model.layers.layers.6.mixer.q_norm.weight"
 .p2align 3
 Lweightdims65: .quad 128
@@ -531,10 +531,10 @@ Lweightname66: .asciz "model.layers.layers.6.mixer.k_norm.weight"
 Lweightdims66: .quad 128
 Lweightname67: .asciz "model.layers.layers.6.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims67: .quad 32768,4096
+Lweightdims67: .quad 32768, 4096
 Lweightname68: .asciz "model.layers.layers.6.mlp.down_proj.weight"
 .p2align 3
-Lweightdims68: .quad 4096,16384
+Lweightdims68: .quad 4096, 16384
 Lweightname69: .asciz "model.layers.layers.6.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims69: .quad 4096
@@ -549,10 +549,10 @@ Lweightname72: .asciz "model.layers.layers.6.post_mlp_norm.weight"
 Lweightdims72: .quad 4096
 Lweightname73: .asciz "model.layers.layers.7.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims73: .quad 5120,4096
+Lweightdims73: .quad 5120, 4096
 Lweightname74: .asciz "model.layers.layers.7.mixer.o_proj.weight"
 .p2align 3
-Lweightdims74: .quad 4096,4096
+Lweightdims74: .quad 4096, 4096
 Lweightname75: .asciz "model.layers.layers.7.mixer.q_norm.weight"
 .p2align 3
 Lweightdims75: .quad 128
@@ -561,10 +561,10 @@ Lweightname76: .asciz "model.layers.layers.7.mixer.k_norm.weight"
 Lweightdims76: .quad 128
 Lweightname77: .asciz "model.layers.layers.7.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims77: .quad 32768,4096
+Lweightdims77: .quad 32768, 4096
 Lweightname78: .asciz "model.layers.layers.7.mlp.down_proj.weight"
 .p2align 3
-Lweightdims78: .quad 4096,16384
+Lweightdims78: .quad 4096, 16384
 Lweightname79: .asciz "model.layers.layers.7.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims79: .quad 4096
@@ -579,10 +579,10 @@ Lweightname82: .asciz "model.layers.layers.7.post_mlp_norm.weight"
 Lweightdims82: .quad 4096
 Lweightname83: .asciz "model.layers.layers.8.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims83: .quad 5120,4096
+Lweightdims83: .quad 5120, 4096
 Lweightname84: .asciz "model.layers.layers.8.mixer.o_proj.weight"
 .p2align 3
-Lweightdims84: .quad 4096,4096
+Lweightdims84: .quad 4096, 4096
 Lweightname85: .asciz "model.layers.layers.8.mixer.q_norm.weight"
 .p2align 3
 Lweightdims85: .quad 128
@@ -591,10 +591,10 @@ Lweightname86: .asciz "model.layers.layers.8.mixer.k_norm.weight"
 Lweightdims86: .quad 128
 Lweightname87: .asciz "model.layers.layers.8.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims87: .quad 32768,4096
+Lweightdims87: .quad 32768, 4096
 Lweightname88: .asciz "model.layers.layers.8.mlp.down_proj.weight"
 .p2align 3
-Lweightdims88: .quad 4096,16384
+Lweightdims88: .quad 4096, 16384
 Lweightname89: .asciz "model.layers.layers.8.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims89: .quad 4096
@@ -609,10 +609,10 @@ Lweightname92: .asciz "model.layers.layers.8.post_mlp_norm.weight"
 Lweightdims92: .quad 4096
 Lweightname93: .asciz "model.layers.layers.9.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims93: .quad 5120,4096
+Lweightdims93: .quad 5120, 4096
 Lweightname94: .asciz "model.layers.layers.9.mixer.o_proj.weight"
 .p2align 3
-Lweightdims94: .quad 4096,4096
+Lweightdims94: .quad 4096, 4096
 Lweightname95: .asciz "model.layers.layers.9.mixer.q_norm.weight"
 .p2align 3
 Lweightdims95: .quad 128
@@ -621,10 +621,10 @@ Lweightname96: .asciz "model.layers.layers.9.mixer.k_norm.weight"
 Lweightdims96: .quad 128
 Lweightname97: .asciz "model.layers.layers.9.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims97: .quad 32768,4096
+Lweightdims97: .quad 32768, 4096
 Lweightname98: .asciz "model.layers.layers.9.mlp.down_proj.weight"
 .p2align 3
-Lweightdims98: .quad 4096,16384
+Lweightdims98: .quad 4096, 16384
 Lweightname99: .asciz "model.layers.layers.9.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims99: .quad 4096
@@ -639,10 +639,10 @@ Lweightname102: .asciz "model.layers.layers.9.post_mlp_norm.weight"
 Lweightdims102: .quad 4096
 Lweightname103: .asciz "model.layers.layers.10.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims103: .quad 5120,4096
+Lweightdims103: .quad 5120, 4096
 Lweightname104: .asciz "model.layers.layers.10.mixer.o_proj.weight"
 .p2align 3
-Lweightdims104: .quad 4096,4096
+Lweightdims104: .quad 4096, 4096
 Lweightname105: .asciz "model.layers.layers.10.mixer.q_norm.weight"
 .p2align 3
 Lweightdims105: .quad 128
@@ -651,10 +651,10 @@ Lweightname106: .asciz "model.layers.layers.10.mixer.k_norm.weight"
 Lweightdims106: .quad 128
 Lweightname107: .asciz "model.layers.layers.10.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims107: .quad 32768,4096
+Lweightdims107: .quad 32768, 4096
 Lweightname108: .asciz "model.layers.layers.10.mlp.down_proj.weight"
 .p2align 3
-Lweightdims108: .quad 4096,16384
+Lweightdims108: .quad 4096, 16384
 Lweightname109: .asciz "model.layers.layers.10.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims109: .quad 4096
@@ -669,10 +669,10 @@ Lweightname112: .asciz "model.layers.layers.10.post_mlp_norm.weight"
 Lweightdims112: .quad 4096
 Lweightname113: .asciz "model.layers.layers.11.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims113: .quad 5120,4096
+Lweightdims113: .quad 5120, 4096
 Lweightname114: .asciz "model.layers.layers.11.mixer.o_proj.weight"
 .p2align 3
-Lweightdims114: .quad 4096,4096
+Lweightdims114: .quad 4096, 4096
 Lweightname115: .asciz "model.layers.layers.11.mixer.q_norm.weight"
 .p2align 3
 Lweightdims115: .quad 128
@@ -681,10 +681,10 @@ Lweightname116: .asciz "model.layers.layers.11.mixer.k_norm.weight"
 Lweightdims116: .quad 128
 Lweightname117: .asciz "model.layers.layers.11.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims117: .quad 32768,4096
+Lweightdims117: .quad 32768, 4096
 Lweightname118: .asciz "model.layers.layers.11.mlp.down_proj.weight"
 .p2align 3
-Lweightdims118: .quad 4096,16384
+Lweightdims118: .quad 4096, 16384
 Lweightname119: .asciz "model.layers.layers.11.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims119: .quad 4096
@@ -699,10 +699,10 @@ Lweightname122: .asciz "model.layers.layers.11.post_mlp_norm.weight"
 Lweightdims122: .quad 4096
 Lweightname123: .asciz "model.layers.layers.12.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims123: .quad 5120,4096
+Lweightdims123: .quad 5120, 4096
 Lweightname124: .asciz "model.layers.layers.12.mixer.o_proj.weight"
 .p2align 3
-Lweightdims124: .quad 4096,4096
+Lweightdims124: .quad 4096, 4096
 Lweightname125: .asciz "model.layers.layers.12.mixer.q_norm.weight"
 .p2align 3
 Lweightdims125: .quad 128
@@ -711,10 +711,10 @@ Lweightname126: .asciz "model.layers.layers.12.mixer.k_norm.weight"
 Lweightdims126: .quad 128
 Lweightname127: .asciz "model.layers.layers.12.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims127: .quad 32768,4096
+Lweightdims127: .quad 32768, 4096
 Lweightname128: .asciz "model.layers.layers.12.mlp.down_proj.weight"
 .p2align 3
-Lweightdims128: .quad 4096,16384
+Lweightdims128: .quad 4096, 16384
 Lweightname129: .asciz "model.layers.layers.12.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims129: .quad 4096
@@ -729,10 +729,10 @@ Lweightname132: .asciz "model.layers.layers.12.post_mlp_norm.weight"
 Lweightdims132: .quad 4096
 Lweightname133: .asciz "model.layers.layers.13.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims133: .quad 5120,4096
+Lweightdims133: .quad 5120, 4096
 Lweightname134: .asciz "model.layers.layers.13.mixer.o_proj.weight"
 .p2align 3
-Lweightdims134: .quad 4096,4096
+Lweightdims134: .quad 4096, 4096
 Lweightname135: .asciz "model.layers.layers.13.mixer.q_norm.weight"
 .p2align 3
 Lweightdims135: .quad 128
@@ -741,10 +741,10 @@ Lweightname136: .asciz "model.layers.layers.13.mixer.k_norm.weight"
 Lweightdims136: .quad 128
 Lweightname137: .asciz "model.layers.layers.13.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims137: .quad 32768,4096
+Lweightdims137: .quad 32768, 4096
 Lweightname138: .asciz "model.layers.layers.13.mlp.down_proj.weight"
 .p2align 3
-Lweightdims138: .quad 4096,16384
+Lweightdims138: .quad 4096, 16384
 Lweightname139: .asciz "model.layers.layers.13.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims139: .quad 4096
@@ -759,10 +759,10 @@ Lweightname142: .asciz "model.layers.layers.13.post_mlp_norm.weight"
 Lweightdims142: .quad 4096
 Lweightname143: .asciz "model.layers.layers.14.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims143: .quad 5120,4096
+Lweightdims143: .quad 5120, 4096
 Lweightname144: .asciz "model.layers.layers.14.mixer.o_proj.weight"
 .p2align 3
-Lweightdims144: .quad 4096,4096
+Lweightdims144: .quad 4096, 4096
 Lweightname145: .asciz "model.layers.layers.14.mixer.q_norm.weight"
 .p2align 3
 Lweightdims145: .quad 128
@@ -771,10 +771,10 @@ Lweightname146: .asciz "model.layers.layers.14.mixer.k_norm.weight"
 Lweightdims146: .quad 128
 Lweightname147: .asciz "model.layers.layers.14.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims147: .quad 32768,4096
+Lweightdims147: .quad 32768, 4096
 Lweightname148: .asciz "model.layers.layers.14.mlp.down_proj.weight"
 .p2align 3
-Lweightdims148: .quad 4096,16384
+Lweightdims148: .quad 4096, 16384
 Lweightname149: .asciz "model.layers.layers.14.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims149: .quad 4096
@@ -789,10 +789,10 @@ Lweightname152: .asciz "model.layers.layers.14.post_mlp_norm.weight"
 Lweightdims152: .quad 4096
 Lweightname153: .asciz "model.layers.layers.15.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims153: .quad 5120,4096
+Lweightdims153: .quad 5120, 4096
 Lweightname154: .asciz "model.layers.layers.15.mixer.o_proj.weight"
 .p2align 3
-Lweightdims154: .quad 4096,4096
+Lweightdims154: .quad 4096, 4096
 Lweightname155: .asciz "model.layers.layers.15.mixer.q_norm.weight"
 .p2align 3
 Lweightdims155: .quad 128
@@ -801,10 +801,10 @@ Lweightname156: .asciz "model.layers.layers.15.mixer.k_norm.weight"
 Lweightdims156: .quad 128
 Lweightname157: .asciz "model.layers.layers.15.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims157: .quad 32768,4096
+Lweightdims157: .quad 32768, 4096
 Lweightname158: .asciz "model.layers.layers.15.mlp.down_proj.weight"
 .p2align 3
-Lweightdims158: .quad 4096,16384
+Lweightdims158: .quad 4096, 16384
 Lweightname159: .asciz "model.layers.layers.15.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims159: .quad 4096
@@ -819,10 +819,10 @@ Lweightname162: .asciz "model.layers.layers.15.post_mlp_norm.weight"
 Lweightdims162: .quad 4096
 Lweightname163: .asciz "model.layers.layers.16.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims163: .quad 5120,4096
+Lweightdims163: .quad 5120, 4096
 Lweightname164: .asciz "model.layers.layers.16.mixer.o_proj.weight"
 .p2align 3
-Lweightdims164: .quad 4096,4096
+Lweightdims164: .quad 4096, 4096
 Lweightname165: .asciz "model.layers.layers.16.mixer.q_norm.weight"
 .p2align 3
 Lweightdims165: .quad 128
@@ -831,10 +831,10 @@ Lweightname166: .asciz "model.layers.layers.16.mixer.k_norm.weight"
 Lweightdims166: .quad 128
 Lweightname167: .asciz "model.layers.layers.16.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims167: .quad 32768,4096
+Lweightdims167: .quad 32768, 4096
 Lweightname168: .asciz "model.layers.layers.16.mlp.down_proj.weight"
 .p2align 3
-Lweightdims168: .quad 4096,16384
+Lweightdims168: .quad 4096, 16384
 Lweightname169: .asciz "model.layers.layers.16.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims169: .quad 4096
@@ -849,10 +849,10 @@ Lweightname172: .asciz "model.layers.layers.16.post_mlp_norm.weight"
 Lweightdims172: .quad 4096
 Lweightname173: .asciz "model.layers.layers.17.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims173: .quad 5120,4096
+Lweightdims173: .quad 5120, 4096
 Lweightname174: .asciz "model.layers.layers.17.mixer.o_proj.weight"
 .p2align 3
-Lweightdims174: .quad 4096,4096
+Lweightdims174: .quad 4096, 4096
 Lweightname175: .asciz "model.layers.layers.17.mixer.q_norm.weight"
 .p2align 3
 Lweightdims175: .quad 128
@@ -861,10 +861,10 @@ Lweightname176: .asciz "model.layers.layers.17.mixer.k_norm.weight"
 Lweightdims176: .quad 128
 Lweightname177: .asciz "model.layers.layers.17.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims177: .quad 32768,4096
+Lweightdims177: .quad 32768, 4096
 Lweightname178: .asciz "model.layers.layers.17.mlp.down_proj.weight"
 .p2align 3
-Lweightdims178: .quad 4096,16384
+Lweightdims178: .quad 4096, 16384
 Lweightname179: .asciz "model.layers.layers.17.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims179: .quad 4096
@@ -879,10 +879,10 @@ Lweightname182: .asciz "model.layers.layers.17.post_mlp_norm.weight"
 Lweightdims182: .quad 4096
 Lweightname183: .asciz "model.layers.layers.18.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims183: .quad 5120,4096
+Lweightdims183: .quad 5120, 4096
 Lweightname184: .asciz "model.layers.layers.18.mixer.o_proj.weight"
 .p2align 3
-Lweightdims184: .quad 4096,4096
+Lweightdims184: .quad 4096, 4096
 Lweightname185: .asciz "model.layers.layers.18.mixer.q_norm.weight"
 .p2align 3
 Lweightdims185: .quad 128
@@ -891,10 +891,10 @@ Lweightname186: .asciz "model.layers.layers.18.mixer.k_norm.weight"
 Lweightdims186: .quad 128
 Lweightname187: .asciz "model.layers.layers.18.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims187: .quad 32768,4096
+Lweightdims187: .quad 32768, 4096
 Lweightname188: .asciz "model.layers.layers.18.mlp.down_proj.weight"
 .p2align 3
-Lweightdims188: .quad 4096,16384
+Lweightdims188: .quad 4096, 16384
 Lweightname189: .asciz "model.layers.layers.18.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims189: .quad 4096
@@ -909,10 +909,10 @@ Lweightname192: .asciz "model.layers.layers.18.post_mlp_norm.weight"
 Lweightdims192: .quad 4096
 Lweightname193: .asciz "model.layers.layers.19.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims193: .quad 5120,4096
+Lweightdims193: .quad 5120, 4096
 Lweightname194: .asciz "model.layers.layers.19.mixer.o_proj.weight"
 .p2align 3
-Lweightdims194: .quad 4096,4096
+Lweightdims194: .quad 4096, 4096
 Lweightname195: .asciz "model.layers.layers.19.mixer.q_norm.weight"
 .p2align 3
 Lweightdims195: .quad 128
@@ -921,10 +921,10 @@ Lweightname196: .asciz "model.layers.layers.19.mixer.k_norm.weight"
 Lweightdims196: .quad 128
 Lweightname197: .asciz "model.layers.layers.19.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims197: .quad 32768,4096
+Lweightdims197: .quad 32768, 4096
 Lweightname198: .asciz "model.layers.layers.19.mlp.down_proj.weight"
 .p2align 3
-Lweightdims198: .quad 4096,16384
+Lweightdims198: .quad 4096, 16384
 Lweightname199: .asciz "model.layers.layers.19.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims199: .quad 4096
@@ -939,10 +939,10 @@ Lweightname202: .asciz "model.layers.layers.19.post_mlp_norm.weight"
 Lweightdims202: .quad 4096
 Lweightname203: .asciz "model.layers.layers.20.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims203: .quad 5120,4096
+Lweightdims203: .quad 5120, 4096
 Lweightname204: .asciz "model.layers.layers.20.mixer.o_proj.weight"
 .p2align 3
-Lweightdims204: .quad 4096,4096
+Lweightdims204: .quad 4096, 4096
 Lweightname205: .asciz "model.layers.layers.20.mixer.q_norm.weight"
 .p2align 3
 Lweightdims205: .quad 128
@@ -951,10 +951,10 @@ Lweightname206: .asciz "model.layers.layers.20.mixer.k_norm.weight"
 Lweightdims206: .quad 128
 Lweightname207: .asciz "model.layers.layers.20.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims207: .quad 32768,4096
+Lweightdims207: .quad 32768, 4096
 Lweightname208: .asciz "model.layers.layers.20.mlp.down_proj.weight"
 .p2align 3
-Lweightdims208: .quad 4096,16384
+Lweightdims208: .quad 4096, 16384
 Lweightname209: .asciz "model.layers.layers.20.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims209: .quad 4096
@@ -969,10 +969,10 @@ Lweightname212: .asciz "model.layers.layers.20.post_mlp_norm.weight"
 Lweightdims212: .quad 4096
 Lweightname213: .asciz "model.layers.layers.21.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims213: .quad 5120,4096
+Lweightdims213: .quad 5120, 4096
 Lweightname214: .asciz "model.layers.layers.21.mixer.o_proj.weight"
 .p2align 3
-Lweightdims214: .quad 4096,4096
+Lweightdims214: .quad 4096, 4096
 Lweightname215: .asciz "model.layers.layers.21.mixer.q_norm.weight"
 .p2align 3
 Lweightdims215: .quad 128
@@ -981,10 +981,10 @@ Lweightname216: .asciz "model.layers.layers.21.mixer.k_norm.weight"
 Lweightdims216: .quad 128
 Lweightname217: .asciz "model.layers.layers.21.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims217: .quad 32768,4096
+Lweightdims217: .quad 32768, 4096
 Lweightname218: .asciz "model.layers.layers.21.mlp.down_proj.weight"
 .p2align 3
-Lweightdims218: .quad 4096,16384
+Lweightdims218: .quad 4096, 16384
 Lweightname219: .asciz "model.layers.layers.21.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims219: .quad 4096
@@ -999,10 +999,10 @@ Lweightname222: .asciz "model.layers.layers.21.post_mlp_norm.weight"
 Lweightdims222: .quad 4096
 Lweightname223: .asciz "model.layers.layers.22.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims223: .quad 5120,4096
+Lweightdims223: .quad 5120, 4096
 Lweightname224: .asciz "model.layers.layers.22.mixer.o_proj.weight"
 .p2align 3
-Lweightdims224: .quad 4096,4096
+Lweightdims224: .quad 4096, 4096
 Lweightname225: .asciz "model.layers.layers.22.mixer.q_norm.weight"
 .p2align 3
 Lweightdims225: .quad 128
@@ -1011,10 +1011,10 @@ Lweightname226: .asciz "model.layers.layers.22.mixer.k_norm.weight"
 Lweightdims226: .quad 128
 Lweightname227: .asciz "model.layers.layers.22.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims227: .quad 32768,4096
+Lweightdims227: .quad 32768, 4096
 Lweightname228: .asciz "model.layers.layers.22.mlp.down_proj.weight"
 .p2align 3
-Lweightdims228: .quad 4096,16384
+Lweightdims228: .quad 4096, 16384
 Lweightname229: .asciz "model.layers.layers.22.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims229: .quad 4096
@@ -1029,10 +1029,10 @@ Lweightname232: .asciz "model.layers.layers.22.post_mlp_norm.weight"
 Lweightdims232: .quad 4096
 Lweightname233: .asciz "model.layers.layers.23.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims233: .quad 5120,4096
+Lweightdims233: .quad 5120, 4096
 Lweightname234: .asciz "model.layers.layers.23.mixer.o_proj.weight"
 .p2align 3
-Lweightdims234: .quad 4096,4096
+Lweightdims234: .quad 4096, 4096
 Lweightname235: .asciz "model.layers.layers.23.mixer.q_norm.weight"
 .p2align 3
 Lweightdims235: .quad 128
@@ -1041,10 +1041,10 @@ Lweightname236: .asciz "model.layers.layers.23.mixer.k_norm.weight"
 Lweightdims236: .quad 128
 Lweightname237: .asciz "model.layers.layers.23.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims237: .quad 32768,4096
+Lweightdims237: .quad 32768, 4096
 Lweightname238: .asciz "model.layers.layers.23.mlp.down_proj.weight"
 .p2align 3
-Lweightdims238: .quad 4096,16384
+Lweightdims238: .quad 4096, 16384
 Lweightname239: .asciz "model.layers.layers.23.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims239: .quad 4096
@@ -1059,10 +1059,10 @@ Lweightname242: .asciz "model.layers.layers.23.post_mlp_norm.weight"
 Lweightdims242: .quad 4096
 Lweightname243: .asciz "model.layers.layers.24.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims243: .quad 5120,4096
+Lweightdims243: .quad 5120, 4096
 Lweightname244: .asciz "model.layers.layers.24.mixer.o_proj.weight"
 .p2align 3
-Lweightdims244: .quad 4096,4096
+Lweightdims244: .quad 4096, 4096
 Lweightname245: .asciz "model.layers.layers.24.mixer.q_norm.weight"
 .p2align 3
 Lweightdims245: .quad 128
@@ -1071,10 +1071,10 @@ Lweightname246: .asciz "model.layers.layers.24.mixer.k_norm.weight"
 Lweightdims246: .quad 128
 Lweightname247: .asciz "model.layers.layers.24.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims247: .quad 32768,4096
+Lweightdims247: .quad 32768, 4096
 Lweightname248: .asciz "model.layers.layers.24.mlp.down_proj.weight"
 .p2align 3
-Lweightdims248: .quad 4096,16384
+Lweightdims248: .quad 4096, 16384
 Lweightname249: .asciz "model.layers.layers.24.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims249: .quad 4096
@@ -1089,10 +1089,10 @@ Lweightname252: .asciz "model.layers.layers.24.post_mlp_norm.weight"
 Lweightdims252: .quad 4096
 Lweightname253: .asciz "model.layers.layers.25.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims253: .quad 5120,4096
+Lweightdims253: .quad 5120, 4096
 Lweightname254: .asciz "model.layers.layers.25.mixer.o_proj.weight"
 .p2align 3
-Lweightdims254: .quad 4096,4096
+Lweightdims254: .quad 4096, 4096
 Lweightname255: .asciz "model.layers.layers.25.mixer.q_norm.weight"
 .p2align 3
 Lweightdims255: .quad 128
@@ -1101,10 +1101,10 @@ Lweightname256: .asciz "model.layers.layers.25.mixer.k_norm.weight"
 Lweightdims256: .quad 128
 Lweightname257: .asciz "model.layers.layers.25.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims257: .quad 32768,4096
+Lweightdims257: .quad 32768, 4096
 Lweightname258: .asciz "model.layers.layers.25.mlp.down_proj.weight"
 .p2align 3
-Lweightdims258: .quad 4096,16384
+Lweightdims258: .quad 4096, 16384
 Lweightname259: .asciz "model.layers.layers.25.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims259: .quad 4096
@@ -1119,10 +1119,10 @@ Lweightname262: .asciz "model.layers.layers.25.post_mlp_norm.weight"
 Lweightdims262: .quad 4096
 Lweightname263: .asciz "model.layers.layers.26.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims263: .quad 5120,4096
+Lweightdims263: .quad 5120, 4096
 Lweightname264: .asciz "model.layers.layers.26.mixer.o_proj.weight"
 .p2align 3
-Lweightdims264: .quad 4096,4096
+Lweightdims264: .quad 4096, 4096
 Lweightname265: .asciz "model.layers.layers.26.mixer.q_norm.weight"
 .p2align 3
 Lweightdims265: .quad 128
@@ -1131,10 +1131,10 @@ Lweightname266: .asciz "model.layers.layers.26.mixer.k_norm.weight"
 Lweightdims266: .quad 128
 Lweightname267: .asciz "model.layers.layers.26.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims267: .quad 32768,4096
+Lweightdims267: .quad 32768, 4096
 Lweightname268: .asciz "model.layers.layers.26.mlp.down_proj.weight"
 .p2align 3
-Lweightdims268: .quad 4096,16384
+Lweightdims268: .quad 4096, 16384
 Lweightname269: .asciz "model.layers.layers.26.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims269: .quad 4096
@@ -1149,10 +1149,10 @@ Lweightname272: .asciz "model.layers.layers.26.post_mlp_norm.weight"
 Lweightdims272: .quad 4096
 Lweightname273: .asciz "model.layers.layers.27.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims273: .quad 5120,4096
+Lweightdims273: .quad 5120, 4096
 Lweightname274: .asciz "model.layers.layers.27.mixer.o_proj.weight"
 .p2align 3
-Lweightdims274: .quad 4096,4096
+Lweightdims274: .quad 4096, 4096
 Lweightname275: .asciz "model.layers.layers.27.mixer.q_norm.weight"
 .p2align 3
 Lweightdims275: .quad 128
@@ -1161,10 +1161,10 @@ Lweightname276: .asciz "model.layers.layers.27.mixer.k_norm.weight"
 Lweightdims276: .quad 128
 Lweightname277: .asciz "model.layers.layers.27.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims277: .quad 32768,4096
+Lweightdims277: .quad 32768, 4096
 Lweightname278: .asciz "model.layers.layers.27.mlp.down_proj.weight"
 .p2align 3
-Lweightdims278: .quad 4096,16384
+Lweightdims278: .quad 4096, 16384
 Lweightname279: .asciz "model.layers.layers.27.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims279: .quad 4096
@@ -1179,10 +1179,10 @@ Lweightname282: .asciz "model.layers.layers.27.post_mlp_norm.weight"
 Lweightdims282: .quad 4096
 Lweightname283: .asciz "model.layers.layers.28.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims283: .quad 5120,4096
+Lweightdims283: .quad 5120, 4096
 Lweightname284: .asciz "model.layers.layers.28.mixer.o_proj.weight"
 .p2align 3
-Lweightdims284: .quad 4096,4096
+Lweightdims284: .quad 4096, 4096
 Lweightname285: .asciz "model.layers.layers.28.mixer.q_norm.weight"
 .p2align 3
 Lweightdims285: .quad 128
@@ -1191,10 +1191,10 @@ Lweightname286: .asciz "model.layers.layers.28.mixer.k_norm.weight"
 Lweightdims286: .quad 128
 Lweightname287: .asciz "model.layers.layers.28.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims287: .quad 32768,4096
+Lweightdims287: .quad 32768, 4096
 Lweightname288: .asciz "model.layers.layers.28.mlp.down_proj.weight"
 .p2align 3
-Lweightdims288: .quad 4096,16384
+Lweightdims288: .quad 4096, 16384
 Lweightname289: .asciz "model.layers.layers.28.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims289: .quad 4096
@@ -1209,10 +1209,10 @@ Lweightname292: .asciz "model.layers.layers.28.post_mlp_norm.weight"
 Lweightdims292: .quad 4096
 Lweightname293: .asciz "model.layers.layers.29.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims293: .quad 5120,4096
+Lweightdims293: .quad 5120, 4096
 Lweightname294: .asciz "model.layers.layers.29.mixer.o_proj.weight"
 .p2align 3
-Lweightdims294: .quad 4096,4096
+Lweightdims294: .quad 4096, 4096
 Lweightname295: .asciz "model.layers.layers.29.mixer.q_norm.weight"
 .p2align 3
 Lweightdims295: .quad 128
@@ -1221,10 +1221,10 @@ Lweightname296: .asciz "model.layers.layers.29.mixer.k_norm.weight"
 Lweightdims296: .quad 128
 Lweightname297: .asciz "model.layers.layers.29.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims297: .quad 32768,4096
+Lweightdims297: .quad 32768, 4096
 Lweightname298: .asciz "model.layers.layers.29.mlp.down_proj.weight"
 .p2align 3
-Lweightdims298: .quad 4096,16384
+Lweightdims298: .quad 4096, 16384
 Lweightname299: .asciz "model.layers.layers.29.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims299: .quad 4096
@@ -1239,10 +1239,10 @@ Lweightname302: .asciz "model.layers.layers.29.post_mlp_norm.weight"
 Lweightdims302: .quad 4096
 Lweightname303: .asciz "model.layers.layers.30.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims303: .quad 5120,4096
+Lweightdims303: .quad 5120, 4096
 Lweightname304: .asciz "model.layers.layers.30.mixer.o_proj.weight"
 .p2align 3
-Lweightdims304: .quad 4096,4096
+Lweightdims304: .quad 4096, 4096
 Lweightname305: .asciz "model.layers.layers.30.mixer.q_norm.weight"
 .p2align 3
 Lweightdims305: .quad 128
@@ -1251,10 +1251,10 @@ Lweightname306: .asciz "model.layers.layers.30.mixer.k_norm.weight"
 Lweightdims306: .quad 128
 Lweightname307: .asciz "model.layers.layers.30.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims307: .quad 32768,4096
+Lweightdims307: .quad 32768, 4096
 Lweightname308: .asciz "model.layers.layers.30.mlp.down_proj.weight"
 .p2align 3
-Lweightdims308: .quad 4096,16384
+Lweightdims308: .quad 4096, 16384
 Lweightname309: .asciz "model.layers.layers.30.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims309: .quad 4096
@@ -1269,10 +1269,10 @@ Lweightname312: .asciz "model.layers.layers.30.post_mlp_norm.weight"
 Lweightdims312: .quad 4096
 Lweightname313: .asciz "model.layers.layers.31.mixer.qkv_proj.weight"
 .p2align 3
-Lweightdims313: .quad 5120,4096
+Lweightdims313: .quad 5120, 4096
 Lweightname314: .asciz "model.layers.layers.31.mixer.o_proj.weight"
 .p2align 3
-Lweightdims314: .quad 4096,4096
+Lweightdims314: .quad 4096, 4096
 Lweightname315: .asciz "model.layers.layers.31.mixer.q_norm.weight"
 .p2align 3
 Lweightdims315: .quad 128
@@ -1281,10 +1281,10 @@ Lweightname316: .asciz "model.layers.layers.31.mixer.k_norm.weight"
 Lweightdims316: .quad 128
 Lweightname317: .asciz "model.layers.layers.31.mlp.gate_up_proj.weight"
 .p2align 3
-Lweightdims317: .quad 32768,4096
+Lweightdims317: .quad 32768, 4096
 Lweightname318: .asciz "model.layers.layers.31.mlp.down_proj.weight"
 .p2align 3
-Lweightdims318: .quad 4096,16384
+Lweightdims318: .quad 4096, 16384
 Lweightname319: .asciz "model.layers.layers.31.pre_mixer_norm.weight"
 .p2align 3
 Lweightdims319: .quad 4096
@@ -1298,4 +1298,4 @@ Lweightname322: .asciz "model.layers.layers.31.post_mlp_norm.weight"
 .p2align 3
 Lweightdims322: .quad 4096
 .globl _plamo_weights
-.zerofill __DATA,__bss,_plamo_weights,2584,3
+.zerofill __DATA, __bss, _plamo_weights, 2584, 3
