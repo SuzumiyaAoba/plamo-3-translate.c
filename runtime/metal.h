@@ -48,6 +48,8 @@ struct plamo_metal;
 struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *, char *, size_t);
 void plamo_metal_close(struct plamo_metal *);
 void plamo_metal_maintain(struct plamo_metal *);
+// Re-request residency of every retained allocation (idle keep-alive).
+void plamo_metal_keep_resident(struct plamo_metal *);
 void plamo_metal_get_info(const struct plamo_metal *, struct plamo_metal_info *);
 /* Retain only ranges that fit and finish each range's first GPU page access
    before loading the next one. Skip others without staging reads. Zero reports
@@ -78,6 +80,25 @@ enum { PLAMO_VERIFY_MAX = 16 };
    a new forward/prefill invalidates the remaining candidates. */
 int plamo_metal_verify(struct plamo_metal *, struct model *, const uint32_t *, uint64_t tokens,
                        uint32_t *next);
+/* Like plamo_metal_verify, for a chain followed by leaves. depths[i] is the
+   position offset of candidate i: i for the chain, and for a leaf the offset
+   of the chain token it replaces (1 <= depth < chain length). A leaf attends
+   only to the chain before that offset. Returns 0 when a leaf cannot use the
+   tree-masked attention path; the caller may then verify the chain alone. */
+int plamo_metal_verify_tree(struct plamo_metal *, struct model *, const uint32_t *,
+                            const uint32_t *depths, uint64_t tokens, uint32_t *next);
+/* Run 'steps' greedy single-token forwards in one command: step s embeds token
+   s (first, then each step's choice) and records the next token, the runner-up
+   and their logit margin. Returns 0 without changes when unsupported (e.g. a
+   sliding window would fill), so the caller can step on the CPU side instead. */
+int plamo_metal_draft_steps(struct plamo_metal *, struct model *, uint32_t first, unsigned steps,
+                            uint32_t *ids, uint32_t *alternatives, float *margins);
+/* Allocate the chained steps' GPU embedding copy ahead of the first request. */
+int plamo_metal_prepare_draft_steps(struct plamo_metal *, struct model *);
+/* Prepare KV/rotation views and RoPE rows for the first 'rows' positions. */
+int plamo_metal_prepare_rows(struct plamo_metal *, struct model *, uint64_t rows);
+/* Commit candidates in position order; a leaf may replace the next chain token
+   and ends the committed path. */
 int plamo_metal_commit(struct plamo_metal *, struct model *, uint64_t index);
 /* Synchronous dense projection; 0 leaves the caller free to use its CPU kernel.
    Input/output must not overlap. Arbitrary FP32 strides and BF16 row/column

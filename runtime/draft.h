@@ -2,7 +2,7 @@
 #define PLAMO_DRAFT_H
 #include "model.h"
 
-enum { PLAMO_DRAFT_MAX = 16, PLAMO_DRAFT_MAGIC = 0x504c4431 };
+enum { PLAMO_DRAFT_MAX = 16, PLAMO_DRAFT_MAGIC = 0x504c4431, PLAMO_DRAFT_VERSION = 2 };
 struct plamo_draft;
 /* Optional, process-isolated proposer. Missing files, protocol failures and
    child termination simply disable speculation; the target keeps generating. */
@@ -10,7 +10,13 @@ struct plamo_draft *plamo_draft_open(void);
 void plamo_draft_close(struct plamo_draft *);
 int plamo_draft_reset(struct plamo_draft *, const char *, unsigned direction);
 unsigned plamo_draft_propose(struct plamo_draft *, uint32_t first, unsigned limit, uint32_t *);
+/* Also report each proposal's second choice and top-two logit margin (index 0,
+   the known first token, has none: UINT32_MAX). Either array may be NULL. */
+unsigned plamo_draft_propose_alternatives(struct plamo_draft *, uint32_t first, unsigned limit,
+                                          uint32_t *ids, uint32_t *alternatives, float *margins);
 int plamo_draft_accept(struct plamo_draft *, unsigned consumed);
+/* Keep the first 'consumed' proposals, then append the target's replacement. */
+int plamo_draft_accept_replacement(struct plamo_draft *, unsigned consumed, uint32_t replacement);
 
 /* Save only the rows that a bounded speculative suffix could evict. Restoring
    a prefix leaves weights/workspace alone and invalidates derived rotations. */

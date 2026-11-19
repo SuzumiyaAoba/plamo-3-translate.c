@@ -15,7 +15,7 @@ struct plamo_engine {
     struct plamo_parallel *parallel;
     struct plamo_metal *metal;
     struct plamo_draft *draft;
-    int draft_prepared;
+    int draft_prepared, draft_tree;
     struct plamo_prompt_cache *prefix[2];
     struct plamo_tokenizer *tokenizer;
     int tokenizer_only, prepared, prefixes_prepared;
@@ -243,6 +243,11 @@ void plamo_engine_maintain_memory(struct plamo_engine *e) {
         plamo_metal_maintain(e->metal);
 }
 
+void plamo_engine_keep_resident(struct plamo_engine *e) {
+    if (e->metal)
+        plamo_metal_keep_resident(e->metal);
+}
+
 static int prepare_matrix(struct plamo_engine *e, const uint16_t *weights, uint64_t rows,
                           uint64_t columns) {
     if (!rows || !columns)
@@ -316,6 +321,30 @@ fail:
     return 0;
 }
 
+/* Append the proposer's second choices as leaves, least confident first. A leaf
+   replaces the chain token at its depth. Up to eight candidates share one input
+   fragment of the verification kernels, so leaves only fill that free slack. */
+enum { LEAF_SLACK = 8 };
+static unsigned add_leaves(uint32_t *ids, const uint32_t *alternatives, const float *margins,
+                           uint32_t *depths, unsigned n) {
+    int used[PLAMO_VERIFY_MAX] = {0};
+    unsigned total = n;
+    for (unsigned j = 0; j < n; ++j)
+        depths[j] = j;
+    while (total < LEAF_SLACK) {
+        unsigned best = 0;
+        for (unsigned j = 1; j < n; ++j)
+            if (!used[j] && alternatives[j] != UINT32_MAX && (!best || margins[j] < margins[best]))
+                best = j;
+        if (!best)
+            break;
+        used[best] = 1;
+        ids[total] = alternatives[best];
+        depths[total++] = best;
+    }
+    return total;
+}
+
 static void prepare_draft(struct plamo_engine *e) {
     if (e->draft_prepared)
         return;
@@ -334,6 +363,9 @@ static void prepare_draft(struct plamo_engine *e) {
             if (!*end && value >= 2 && value <= PLAMO_VERIFY_MAX)
                 e->info.speculative_tokens = (unsigned)value;
         }
+        // Verify the proposer's second choices as tree leaves unless disabled.
+        setting = getenv("PLAMO_SPECULATIVE_TREE");
+        e->draft_tree = !setting || strcmp(setting, "0");
     }
     double seconds = now() - start;
     e->info.preload_seconds += seconds;
@@ -380,6 +412,9 @@ int plamo_engine_prepare(struct plamo_engine *e, char *error, size_t cap) {
         e->info.prefix_bytes += plamo_prompt_cache_bytes(e->prefix[direction]);
     }
     plamo_reset_request(&plamo_model);
+    // Grow KV views and RoPE rows past a typical request (prompt plus output)
+    // during startup rather than inside the first request.
+    (void)plamo_metal_prepare_rows(e->metal, &plamo_model, 256);
     e->info.prefix_seconds = now() - start;
     e->info.preload_seconds += e->info.prefix_seconds;
     e->info.load_seconds += e->info.prefix_seconds;
@@ -525,19 +560,36 @@ int plamo_engine_translate(struct plamo_engine *e, const char *text, unsigned di
             if (limit > block)
                 limit = block;
             uint32_t proposed[PLAMO_VERIFY_MAX], next[PLAMO_VERIFY_MAX];
+            uint32_t alternatives[PLAMO_VERIFY_MAX], depths[PLAMO_VERIFY_MAX];
+            float margins[PLAMO_VERIFY_MAX];
             double draft_start = now();
             // The first token is already known from the target's prefill.
             // Emit it before preparing the proposer, and skip that work for
             // EOS, a one-token response, or cancellation at the first token.
             if (!draft_ready)
                 draft_ready = plamo_draft_reset(e->draft, text, direction);
-            unsigned n = draft_ready ? plamo_draft_propose(e->draft, id, limit, proposed) : 0;
+            unsigned n = draft_ready ? plamo_draft_propose_alternatives(
+                                           e->draft, id, limit, proposed, alternatives, margins)
+                                     : 0;
             result->draft_seconds += now() - draft_start;
             if (!n) {
                 disable_draft(e);
                 speculate = 0;
             } else {
-                int verified = plamo_metal_verify(e->metal, &plamo_model, proposed, n, next);
+                unsigned total = n;
+                for (unsigned j = 0; j < n; ++j)
+                    depths[j] = j;
+                if (e->draft_tree)
+                    total = add_leaves(proposed, alternatives, margins, depths, n);
+                int verified =
+                    plamo_metal_verify_tree(e->metal, &plamo_model, proposed, depths, total, next);
+                if (!verified && total > n) {
+                    // Leaves need the masked attention path (e.g. not across a
+                    // full sliding window). The chain alone is still exact.
+                    total = n;
+                    verified =
+                        plamo_metal_verify_tree(e->metal, &plamo_model, proposed, depths, n, next);
+                }
                 if (verified < 0) {
                     snprintf(error, cap, "candidate verification failed");
                     return 0;
@@ -545,13 +597,22 @@ int plamo_engine_translate(struct plamo_engine *e, const char *text, unsigned di
                 if (verified) {
                     ++result->speculative_batches;
                     result->proposed_tokens += n - 1;
+                    result->alternative_tokens += total - n;
                     unsigned consumed = 0;
+                    uint32_t replacement = UINT32_MAX;
                     int stop = 0;
-                    for (unsigned j = 0; j < n; ++j) {
-                        if (j) {
-                            if (proposed[j] != next[j - 1])
+                    for (unsigned j = 0; j < n && replacement == UINT32_MAX; ++j) {
+                        unsigned index = j;
+                        if (j && proposed[j] != next[j - 1]) {
+                            // The target may have chosen the proposer's second choice.
+                            for (index = n; index < total; ++index)
+                                if (depths[index] == j && proposed[index] == next[j - 1])
+                                    break;
+                            if (index == total)
                                 break;
-                            emitted = emit_token(e, proposed[j], cb, result, start, error, cap);
+                        }
+                        if (j) {
+                            emitted = emit_token(e, proposed[index], cb, result, start, error, cap);
                             if (emitted < 0)
                                 return 0;
                             if (!emitted) {
@@ -559,17 +620,22 @@ int plamo_engine_translate(struct plamo_engine *e, const char *text, unsigned di
                                 break;
                             }
                         }
-                        if (plamo_metal_commit(e->metal, &plamo_model, j) != 1) {
+                        if (plamo_metal_commit(e->metal, &plamo_model, index) != 1) {
                             snprintf(error, cap, "candidate commit failed");
                             return 0;
                         }
                         ++consumed;
                         ++result->decode_steps;
+                        if (index != j)
+                            replacement = proposed[index];
                     }
                     result->speculative_tokens += consumed;
                     result->accepted_tokens += consumed ? consumed - 1 : 0;
+                    result->alternative_accepted += replacement != UINT32_MAX;
                     draft_start = now();
-                    if (!plamo_draft_accept(e->draft, consumed)) {
+                    if (!(replacement != UINT32_MAX
+                              ? plamo_draft_accept_replacement(e->draft, consumed - 1, replacement)
+                              : plamo_draft_accept(e->draft, consumed))) {
                         disable_draft(e);
                         speculate = 0;
                     }
@@ -614,4 +680,20 @@ int plamo_engine_translate(struct plamo_engine *e, const char *text, unsigned di
     result->logits_hash = hash(plamo_model.logits, plamo_model.vocab * 4);
     result->state_hash = hash(plamo_model.state, plamo_model.hidden * 4);
     return 1;
+}
+
+static int draft_chain_enabled(const struct plamo_engine *e) {
+    const char *setting = getenv("PLAMO_DRAFT_CHAIN");
+    return e && e->metal && !(setting && !strcmp(setting, "0"));
+}
+void plamo_engine_prepare_draft_steps(struct plamo_engine *e) {
+    if (draft_chain_enabled(e))
+        (void)plamo_metal_prepare_draft_steps(e->metal, &plamo_model);
+}
+int plamo_engine_draft_steps(struct plamo_engine *e, uint32_t first, unsigned steps, uint32_t *ids,
+                             uint32_t *alternatives, float *margins) {
+    if (!draft_chain_enabled(e))
+        return 0;
+    return plamo_metal_draft_steps(e->metal, &plamo_model, first, steps, ids, alternatives,
+                                   margins);
 }

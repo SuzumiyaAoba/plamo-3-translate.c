@@ -33,6 +33,7 @@ struct plamo_result {
     uint64_t cached_prompt_tokens;
     uint64_t prefill_logits_hash, prefill_state_hash, logits_hash, state_hash;
     uint64_t speculative_batches, speculative_tokens, proposed_tokens, accepted_tokens;
+    uint64_t alternative_tokens, alternative_accepted;
     double tokenize_seconds, prefill_seconds, decode_seconds, first_token_seconds, total_seconds;
     double decode_gpu_seconds, prefill_gpu_seconds;
     double draft_seconds;
@@ -50,6 +51,8 @@ struct plamo_engine *plamo_engine_open(enum plamo_memory_mode, int tokenizer_onl
                                        size_t);
 void plamo_engine_get_info(struct plamo_engine *, struct plamo_engine_info *);
 void plamo_engine_maintain_memory(struct plamo_engine *);
+// Idle ticks of long-lived workers: keep retained GPU allocations resident.
+void plamo_engine_keep_resident(struct plamo_engine *);
 /* API startup: fill the adaptive cache, prepare GPU resources and snapshot
    the two fixed translation prefixes before readiness. Bounded, idempotent;
    logical request state is reset afterwards. Single-shot CLI calls omit the
@@ -57,6 +60,11 @@ void plamo_engine_maintain_memory(struct plamo_engine *);
 int plamo_engine_prepare(struct plamo_engine *, char *, size_t);
 uint64_t plamo_engine_tokenize(struct plamo_engine *, const char *, unsigned direction,
                                const uint32_t **ids, char *, size_t);
+/* Prepare chained proposal steps before requests; optional. */
+void plamo_engine_prepare_draft_steps(struct plamo_engine *);
+/* Chained greedy proposal steps on the GPU; 0 when unavailable. */
+int plamo_engine_draft_steps(struct plamo_engine *, uint32_t first, unsigned steps, uint32_t *ids,
+                             uint32_t *alternatives, float *margins);
 int plamo_engine_translate(struct plamo_engine *, const char *, unsigned direction,
                            unsigned max_tokens, const struct plamo_callbacks *,
                            struct plamo_result *, char *, size_t);

@@ -5,6 +5,7 @@ using namespace metal;
 
 struct Linear {
     uint rows, columns, tokens, input_stride, output_stride, aligned_weights, weight_offset;
+    uint first_fragment; // Direct-fragment kernels: token fragment of panel 0.
 };
 inline float bf16(ushort x) {
     return as_type<float>(uint(x) << 16);
@@ -895,14 +896,13 @@ struct Prefill {
 // Normalize all prompt Q/K heads in parallel. For a sliding batch that would
 // overwrite a prefix still needed by earlier queries, retain normalized K/V
 // in QKV until attention has finished. Otherwise use canonical KV directly.
-kernel void plamo_prefill_qkv(device float *qkv [[buffer(0)]],
-                              device const ushort *qn [[buffer(1)]],
-                              device const ushort *kn [[buffer(2)]], device float *k [[buffer(3)]],
-                              device float *v [[buffer(4)]], device float *rotated [[buffer(5)]],
-                              device const float *table [[buffer(6)]],
-                              constant Prefill &p [[buffer(7)]],
-                              uint2 group [[threadgroup_position_in_grid]],
-                              uint tid [[thread_index_in_threadgroup]]) {
+kernel void
+plamo_prefill_qkv(device float *qkv [[buffer(0)]], device const ushort *qn [[buffer(1)]],
+                  device const ushort *kn [[buffer(2)]], device float *k [[buffer(3)]],
+                  device float *v [[buffer(4)]], device float *rotated [[buffer(5)]],
+                  device const float *table [[buffer(6)]], constant Prefill &p [[buffer(7)]],
+                  constant uint *depths [[buffer(8)]], uint2 group [[threadgroup_position_in_grid]],
+                  uint tid [[thread_index_in_threadgroup]]) {
     uint head = group.x, token = group.y, half_dim = p.dim / 2;
     ulong width = ulong(p.qh + 2 * p.kh) * p.dim, base = ulong(token) * width + ulong(head) * p.dim;
     threadgroup float inverse;
@@ -918,7 +918,8 @@ kernel void plamo_prefill_qkv(device float *qkv [[buffer(0)]],
         float2 raw =
             float2((qkv[base + col] * inverse) * (bf16(w[col]) + 1.0f),
                    (qkv[base + col + half_dim] * inverse) * (bf16(w[col + half_dim]) + 1.0f));
-        uint position = min(p.prefix + token, p.capacity - 1);
+        // A verified tree leaf takes the position of the chain token it replaces.
+        uint position = min(p.prefix + (p.speculative ? depths[token] : token), p.capacity - 1);
         ulong t = ulong(position) * p.dim + col;
         float2 r = rotate_pair(raw, float2(table[t], table[t + half_dim]));
         if (head < p.qh) {
@@ -1093,13 +1094,11 @@ kernel void plamo_prefill_attention(
 // A causal score tile shares sixteen keys across four queries. Each score
 // retains the original column-by-column FP32 FMA order. Padding avoids bank
 // conflicts while loading row-major keys into the transposed shared tile.
-kernel void plamo_verify_scores(device const float *qkv [[buffer(0)]],
-                                device const float *rotated [[buffer(1)]],
-                                device const float *proposed [[buffer(2)]],
-                                device float *scores [[buffer(3)]],
-                                constant Prefill &p [[buffer(4)]],
-                                uint3 group [[threadgroup_position_in_grid]],
-                                uint tid [[thread_index_in_threadgroup]]) {
+kernel void plamo_verify_scores(
+    device const float *qkv [[buffer(0)]], device const float *rotated [[buffer(1)]],
+    device const float *proposed [[buffer(2)]], device float *scores [[buffer(3)]],
+    constant Prefill &p [[buffer(4)]], constant uint *depths [[buffer(5)]],
+    uint3 group [[threadgroup_position_in_grid]], uint tid [[thread_index_in_threadgroup]]) {
     threadgroup float keys[128 * 17], queries[4 * 129];
     uint head = group.x, kh = head / (p.qh / p.kh), width = (p.qh + 2 * p.kh) * 128;
     uint first_query = group.y * 4, first_key = group.z * 16, count = p.prefix + p.tokens;
@@ -1122,10 +1121,16 @@ kernel void plamo_verify_scores(device const float *qkv [[buffer(0)]],
     threadgroup_barrier(mem_flags::mem_threadgroup);
     uint query = tid / 16, key = tid % 16, token = first_query + query, row = first_key + key;
     if (token < p.tokens && row < p.prefix + token + 1) {
-        float sum = 0.0f;
-        for (uint col = 0; col < 128; ++col)
-            sum = fma(queries[query * 129 + col], keys[col * 17 + key], sum);
-        scores[(ulong(token) * p.qh + head) * count + row] = sum * (1.0f / sqrt(128.0f));
+        // Candidate i sees candidates below depths[i] and itself. A chain has
+        // depths[i] == i; a leaf's skipped siblings get no softmax weight.
+        if (row >= p.prefix && row - p.prefix >= depths[token] && row - p.prefix != token) {
+            scores[(ulong(token) * p.qh + head) * count + row] = -INFINITY;
+        } else {
+            float sum = 0.0f;
+            for (uint col = 0; col < 128; ++col)
+                sum = fma(queries[query * 129 + col], keys[col * 17 + key], sum);
+            scores[(ulong(token) * p.qh + head) * count + row] = sum * (1.0f / sqrt(128.0f));
+        }
     }
 }
 
@@ -1163,6 +1168,7 @@ kernel void plamo_verify_values(device const float *qkv [[buffer(0)]],
                                 device const float *v [[buffer(1)]],
                                 device const float *scores [[buffer(2)]],
                                 device float *out [[buffer(3)]], constant Prefill &p [[buffer(4)]],
+                                constant uint *depths [[buffer(5)]],
                                 uint3 group [[threadgroup_position_in_grid]],
                                 uint tid [[thread_index_in_threadgroup]]) {
     threadgroup float values[32 * 65], weights[2 * 32];
@@ -1171,6 +1177,7 @@ kernel void plamo_verify_values(device const float *qkv [[buffer(0)]],
     uint width = (p.qh + 2 * p.kh) * 128, query = tid / 64, col = tid % 64,
          token = first_query + query;
     uint maximum = p.prefix + p.tokens, count = p.prefix + token + 1;
+    uint depth = token < p.tokens ? depths[token] : 0;
     float sum = 0.0f;
     for (uint first = 0; first < maximum; first += 32) {
         for (uint i = tid; i < 32 * 64; i += 128) {
@@ -1191,8 +1198,12 @@ kernel void plamo_verify_values(device const float *qkv [[buffer(0)]],
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
         if (token < p.tokens)
-            for (uint row = 0; row < 32 && first + row < count; ++row)
-                sum = fma(weights[query * 32 + row], values[row * 65 + col], sum);
+            for (uint row = 0; row < 32 && first + row < count; ++row) {
+                uint r = first + row;
+                // Skip a leaf's masked siblings rather than multiplying by zero.
+                if (r < p.prefix || r - p.prefix < depth || r - p.prefix == token)
+                    sum = fma(weights[query * 32 + row], values[row * 65 + col], sum);
+            }
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }
     if (token < p.tokens)
@@ -1301,6 +1312,57 @@ inline void draft_dot(device const uchar *w, device const half *x, device float 
 DRAFT_DOT_KERNEL(plamo_draft_dot32, 32)
 DRAFT_DOT_KERNEL(plamo_draft_dot8, 8)
 
+// Each lane reads whole 20-byte blocks (32 values): one scale load and one
+// 16-byte code load per block instead of four small loads. The half products of
+// each 8-value chunk and their FP32 scaling are the same as plamo_draft_dot*;
+// only the grouping of the FP32 partial sums differs. Width lanes share a row.
+template <uint Width>
+inline void draft_dot_block(device const uchar *w, device const half *x, device float *y,
+                            constant Linear &p, uint3 group, uint simd, uint lane) {
+    uint inner = lane % Width, row = group.x * (128 / Width) + simd * (32 / Width) + lane / Width;
+    float sum = 0.0f;
+    if (row < p.rows) {
+        uint blocks = p.columns / 32;
+        ulong base = (ulong(row) * p.columns + p.weight_offset) >> 5;
+        ulong xbase = ulong(group.y) * p.input_stride;
+        for (uint b = inner; b < blocks; b += Width) {
+            device const uchar *block = w + (base + b) * 20;
+            float scale = *((device const float *)block);
+            uint4 codes = uint4(*((device const packed_uint4 *)(block + 4)));
+            device const half4 *xv = (device const half4 *)(x + xbase + ulong(b) * 32);
+#pragma unroll
+            for (uint c = 0; c < 4; ++c) {
+                uint4 bytes = (uint4(codes[c]) >> uint4(0, 8, 16, 24)) & 255;
+                uint4 bits = (bytes & 15) | ((bytes & 240) << 12) | 0x64006400;
+                half4 cc = as_type<half4>(bits.xy) - half4(1032),
+                      d = as_type<half4>(bits.zw) - half4(1032);
+                half4 products = fma(cc, xv[2 * c], d * xv[2 * c + 1]);
+                half dot = (products.x + products.y) + (products.z + products.w);
+                sum = fma(float(dot), scale, sum);
+            }
+        }
+    }
+    if (Width == 32)
+        sum = simd_sum(sum);
+    else {
+#pragma unroll
+        for (uint delta = Width / 2; delta; delta /= 2)
+            sum += simd_shuffle_xor(sum, delta);
+    }
+    if (!inner && row < p.rows)
+        y[ulong(group.y) * p.output_stride + row] = sum;
+}
+#define DRAFT_BLOCK_KERNEL(NAME, WIDTH)                                                            \
+    kernel void NAME(device const uchar *w [[buffer(0)]], device const half *x [[buffer(1)]],      \
+                     device float *y [[buffer(2)]], constant Linear &p [[buffer(3)]],              \
+                     uint3 group [[threadgroup_position_in_grid]],                                 \
+                     uint simd [[simdgroup_index_in_threadgroup]],                                 \
+                     uint lane [[thread_index_in_simdgroup]]) {                                    \
+        draft_dot_block<WIDTH>(w, x, y, p, group, simd, lane);                                     \
+    }
+DRAFT_BLOCK_KERNEL(plamo_draft_block4, 4)
+DRAFT_BLOCK_KERNEL(plamo_draft_block16, 16)
+
 kernel void plamo_draft_norm(device const float *x [[buffer(0)]],
                              device const ushort *w [[buffer(1)]], device float *y [[buffer(2)]],
                              constant MLP &p [[buffer(3)]], device half *copy [[buffer(4)]],
@@ -1324,6 +1386,49 @@ kernel void plamo_draft_swiglu(device float *x [[buffer(0)]], constant MLP &p [[
     float value = (x[i] / (1.0f + plamo_exp(-x[i]))) * x[i + p.intermediate];
     x[i] = value;
     copy[ulong(pos.y) * p.intermediate + pos.x] = half(value);
+}
+
+// Proposal decode: a post-norm residual and the following RMSNorm in one
+// group. The operations and their order match the residual kernels followed
+// by plamo_draft_norm; only the dispatch boundary between them is removed.
+struct ResidualNorm {
+    uint hidden;
+    float offset;
+};
+kernel void plamo_draft_residual_norm(
+    device float *state [[buffer(0)]], device const ushort *post [[buffer(1)]],
+    device const float *branch [[buffer(2)]], device const ushort *next [[buffer(3)]],
+    device float *y [[buffer(4)]], device half *copy [[buffer(5)]],
+    constant ResidualNorm &p [[buffer(6)]], uint tid [[thread_index_in_threadgroup]]) {
+    threadgroup float partials[4], inverse;
+    rms_inverse(branch, p.hidden, tid, partials, inverse);
+    for (uint i = tid; i < p.hidden; i += 128)
+        state[i] += (branch[i] * inverse) * (bf16(post[i]) + p.offset);
+    threadgroup_barrier(mem_flags::mem_device | mem_flags::mem_threadgroup);
+    rms_inverse(state, p.hidden, tid, partials, inverse);
+    for (uint i = tid; i < p.hidden; i += 128) {
+        float value = (state[i] * inverse) * (bf16(next[i]) + 1.0f);
+        y[i] = value;
+        copy[i] = half(value);
+    }
+}
+
+// Prompt and verification batches: one group per row fuses a post-norm residual
+// with the next RMSNorm, with the same operations as the separate kernels.
+kernel void plamo_residual_norm(
+    device float *state [[buffer(0)]], device const ushort *post [[buffer(1)]],
+    device const float *branch [[buffer(2)]], device const ushort *next [[buffer(3)]],
+    device float *y [[buffer(4)]], constant ResidualNorm &p [[buffer(5)]],
+    uint token [[threadgroup_position_in_grid]], uint tid [[thread_index_in_threadgroup]]) {
+    threadgroup float partials[4], inverse;
+    ulong base = ulong(token) * p.hidden;
+    rms_inverse(branch + base, p.hidden, tid, partials, inverse);
+    for (uint i = tid; i < p.hidden; i += 128)
+        state[base + i] += (branch[base + i] * inverse) * (bf16(post[i]) + p.offset);
+    threadgroup_barrier(mem_flags::mem_device | mem_flags::mem_threadgroup);
+    rms_inverse(state + base, p.hidden, tid, partials, inverse);
+    for (uint i = tid; i < p.hidden; i += 128)
+        y[base + i] = (state[base + i] * inverse) * (bf16(next[i]) + 1.0f);
 }
 
 // Probe the compiler's opaque 8x8 matrix fragment layout before using the
@@ -1676,3 +1781,348 @@ PROMPT_ATTENTION(plamo_prompt_attention128, 128, false)
 PROMPT_ATTENTION(plamo_prompt_attention512, 512, false)
 PROMPT_ATTENTION(plamo_prompt_attention_matrix256, 256, true)
 PROMPT_ATTENTION(plamo_prompt_attention_matrix512, 512, true)
+
+// Direct-fragment projections for complete BF16 texture rows. Each lane reads
+// the original words of its own simdgroup-matrix fragment straight from the
+// texture, so no threadgroup staging or barriers are needed. Every 8x8x8 FP32
+// product and the order of the 8-column steps match prompt_matrix exactly.
+struct Arrange {
+    uint tokens, columns, input_stride, fragments;
+};
+// Prompt inputs are rearranged once per projection into FP32 fragment order:
+// each lane then loads one float2 per 8-token by 8-column input fragment.
+kernel void plamo_arrange_fragments(device const float *x [[buffer(0)]],
+                                    device float2 *out [[buffer(1)]],
+                                    constant Arrange &p [[buffer(2)]],
+                                    uint gid [[thread_position_in_grid]]) {
+    uint lane = gid & 31, rest = gid >> 5, frag = rest % p.fragments, ks = rest / p.fragments;
+    if (ks >= p.columns / 8)
+        return;
+    uint lr = ((lane & 6) >> 1) | ((lane & 16) >> 2);
+    uint lc = ((lane & 1) << 1) | ((lane & 8) >> 1);
+    uint token = frag * 8 + lc, col = ks * 8 + lr;
+    out[gid] = float2(token < p.tokens ? x[ulong(token) * p.input_stride + col] : 0.0f,
+                      token + 1 < p.tokens ? x[ulong(token + 1) * p.input_stride + col] : 0.0f);
+}
+// Reverse the texture's sign rotation for two packed BF16 words.
+inline uint direct_words(uint v) {
+    return ((v >> 1) & 0x7fff7fffu) | ((v & 0x00010001u) << 15);
+}
+inline void direct_fragment(thread simdgroup_float8x8 &a, uint v) {
+    a.thread_elements()[0] = as_type<float>(v << 16);
+    a.thread_elements()[1] = as_type<float>(v & 0xffff0000u);
+}
+// Each simdgroup owns MR fragments of eight weight rows and NT fragments of
+// eight tokens; four simdgroups cover 32 * MR rows and group.y selects a panel.
+// Explicit accumulators keep every fragment in registers. Arranged inputs come
+// from plamo_arrange_fragments; small verification batches read inputs in place.
+template <uint MR, uint NT, bool Arranged>
+inline void direct_texture(texture2d<ushort, access::read> w, device const float *x,
+                           device float *y, constant Linear &p, uint3 group, uint simd, uint lane) {
+    uint lr = ((lane & 6) >> 1) | ((lane & 16) >> 2);
+    uint lc = ((lane & 1) << 1) | ((lane & 8) >> 1);
+    uint row0 = (group.x * 4 + simd) * MR * 8, frag0 = group.y * NT + p.first_fragment;
+    // An even lane and its odd neighbour read the texels holding both 8-column
+    // steps of their rows, then exchange the halves the other lane needs.
+    bool odd = lane & 1;
+    uint px = (lc >> 2) + (odd ? 2u : 0u), steps = p.columns / 16, last = p.rows - 1;
+    uint r0 = min(row0 + lr, last), r1 = min(row0 + 8 + lr, last), r2 = min(row0 + 16 + lr, last),
+         r3 = min(row0 + 24 + lr, last);
+#define DIRECT_DECLARE(M)                                                                          \
+    simdgroup_float8x8 c##M##_0(0.0f), c##M##_1(0.0f), c##M##_2(0.0f), c##M##_3(0.0f),             \
+        c##M##_4(0.0f), c##M##_5(0.0f), c##M##_6(0.0f), c##M##_7(0.0f), c##M##_8(0.0f);
+    DIRECT_DECLARE(0)
+    DIRECT_DECLARE(1)
+    DIRECT_DECLARE(2)
+    DIRECT_DECLARE(3)
+#undef DIRECT_DECLARE
+    device const float2 *arranged = (device const float2 *)x + frag0 * 32 + lane;
+#define DIRECT_SOURCE(I)                                                                           \
+    device const float *xa##I =                                                                    \
+        x + ulong(min((frag0 + I) * 8 + lc, p.tokens - 1)) * p.input_stride + lr;                  \
+    device const float *xc##I =                                                                    \
+        x + ulong(min((frag0 + I) * 8 + lc + 1, p.tokens - 1)) * p.input_stride + lr;
+    DIRECT_SOURCE(0)
+    DIRECT_SOURCE(1)
+    DIRECT_SOURCE(2)
+    DIRECT_SOURCE(3)
+    DIRECT_SOURCE(4)
+    DIRECT_SOURCE(5)
+    DIRECT_SOURCE(6)
+    DIRECT_SOURCE(7)
+    DIRECT_SOURCE(8)
+#undef DIRECT_SOURCE
+    for (uint u = 0; u < steps; ++u) {
+        uint s0_0 = 0, s0_1 = 0, s1_0 = 0, s1_1 = 0, s2_0 = 0, s2_1 = 0, s3_0 = 0, s3_1 = 0;
+#define DIRECT_LOAD(M)                                                                             \
+    if (MR > M) {                                                                                  \
+        ushort4 bits = w.read(uint2(4 * u + px, r##M));                                            \
+        uint lo = as_type<uint>(bits.xy), hi = as_type<uint>(bits.zw);                             \
+        uint other = simd_shuffle_xor(odd ? lo : hi, 1);                                           \
+        s##M##_0 = direct_words(odd ? other : lo);                                                 \
+        s##M##_1 = direct_words(odd ? hi : other);                                                 \
+    }
+        DIRECT_LOAD(0)
+        DIRECT_LOAD(1)
+        DIRECT_LOAD(2)
+        DIRECT_LOAD(3)
+#undef DIRECT_LOAD
+#define DIRECT_PRODUCT(I)                                                                          \
+    if (NT > I) {                                                                                  \
+        float2 v = Arranged ? arranged[(ulong(ks) * p.input_stride + I) * 32]                      \
+                            : float2(xa##I[ks * 8], xc##I[ks * 8]);                                \
+        simdgroup_float8x8 b;                                                                      \
+        b.thread_elements()[0] = v.x;                                                              \
+        b.thread_elements()[1] = v.y;                                                              \
+        if (MR > 0)                                                                                \
+            simdgroup_multiply_accumulate(c0_##I, a0, b, c0_##I);                                  \
+        if (MR > 1)                                                                                \
+            simdgroup_multiply_accumulate(c1_##I, a1, b, c1_##I);                                  \
+        if (MR > 2)                                                                                \
+            simdgroup_multiply_accumulate(c2_##I, a2, b, c2_##I);                                  \
+        if (MR > 3)                                                                                \
+            simdgroup_multiply_accumulate(c3_##I, a3, b, c3_##I);                                  \
+    }
+#define DIRECT_STEP(H)                                                                             \
+    {                                                                                              \
+        uint ks = 2 * u + H;                                                                       \
+        simdgroup_float8x8 a0, a1, a2, a3;                                                         \
+        direct_fragment(a0, s0_##H);                                                               \
+        direct_fragment(a1, s1_##H);                                                               \
+        direct_fragment(a2, s2_##H);                                                               \
+        direct_fragment(a3, s3_##H);                                                               \
+        DIRECT_PRODUCT(0)                                                                          \
+        DIRECT_PRODUCT(1)                                                                          \
+        DIRECT_PRODUCT(2)                                                                          \
+        DIRECT_PRODUCT(3)                                                                          \
+        DIRECT_PRODUCT(4)                                                                          \
+        DIRECT_PRODUCT(5)                                                                          \
+        DIRECT_PRODUCT(6)                                                                          \
+        DIRECT_PRODUCT(7)                                                                          \
+        DIRECT_PRODUCT(8)                                                                          \
+    }
+        DIRECT_STEP(0)
+        DIRECT_STEP(1)
+#undef DIRECT_STEP
+#undef DIRECT_PRODUCT
+    }
+#define DIRECT_STORE(M, I)                                                                         \
+    if (MR > M && NT > I) {                                                                        \
+        uint row = row0 + M * 8 + lr, token = (frag0 + I) * 8 + lc;                                \
+        if (row < p.rows && token < p.tokens)                                                      \
+            y[ulong(token) * p.output_stride + row] = c##M##_##I.thread_elements()[0];             \
+        if (row < p.rows && token + 1 < p.tokens)                                                  \
+            y[ulong(token + 1) * p.output_stride + row] = c##M##_##I.thread_elements()[1];         \
+    }
+#define DIRECT_STORE_ROW(M)                                                                        \
+    DIRECT_STORE(M, 0)                                                                             \
+    DIRECT_STORE(M, 1)                                                                             \
+    DIRECT_STORE(M, 2)                                                                             \
+    DIRECT_STORE(M, 3)                                                                             \
+    DIRECT_STORE(M, 4)                                                                             \
+    DIRECT_STORE(M, 5)                                                                             \
+    DIRECT_STORE(M, 6)                                                                             \
+    DIRECT_STORE(M, 7)                                                                             \
+    DIRECT_STORE(M, 8)
+    DIRECT_STORE_ROW(0)
+    DIRECT_STORE_ROW(1)
+    DIRECT_STORE_ROW(2)
+    DIRECT_STORE_ROW(3)
+#undef DIRECT_STORE_ROW
+#undef DIRECT_STORE
+}
+#define DIRECT_TEXTURE(NAME, MR, NT, ARRANGED)                                                     \
+    kernel void NAME(                                                                              \
+        texture2d<ushort, access::read> w [[texture(0)]], device const float *x [[buffer(1)]],     \
+        device float *y [[buffer(2)]], constant Linear &p [[buffer(3)]],                           \
+        uint3 group [[threadgroup_position_in_grid]],                                              \
+        uint simd [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {   \
+        direct_texture<MR, NT, ARRANGED>(w, x, y, p, group, simd, lane);                           \
+    }
+DIRECT_TEXTURE(plamo_direct_raw8, 4, 1, false)
+DIRECT_TEXTURE(plamo_direct_raw16, 2, 2, false)
+DIRECT_TEXTURE(plamo_direct_texture3, 2, 3, true)
+DIRECT_TEXTURE(plamo_direct_texture4, 2, 4, true)
+DIRECT_TEXTURE(plamo_direct_texture5, 2, 5, true)
+DIRECT_TEXTURE(plamo_direct_texture6, 2, 6, true)
+DIRECT_TEXTURE(plamo_direct_texture7, 2, 7, true)
+DIRECT_TEXTURE(plamo_direct_texture8, 2, 8, true)
+DIRECT_TEXTURE(plamo_direct_texture9, 2, 9, true)
+
+// Proposal prompts: the same direct-fragment scheme over the Q4 proposal cache
+// (FP32 scale + 16 code bytes per 32 values). Each lane expands its two codes
+// exactly as weight_value does, and the 8-column steps keep matmul_tile's order.
+template <uint NT>
+inline void direct_q4(device const uchar *w, device const float *x, device float *y,
+                      constant Linear &p, uint3 group, uint simd, uint lane) {
+    uint lr = ((lane & 6) >> 1) | ((lane & 16) >> 2);
+    uint lc = ((lane & 1) << 1) | ((lane & 8) >> 1);
+    uint row0 = (group.x * 4 + simd) * 16, frag0 = group.y * NT + p.first_fragment;
+    uint last = p.rows - 1, blocks = p.columns / 32, shift = 8 * (lc >> 1);
+    uint r0 = min(row0 + lr, last), r1 = min(row0 + 8 + lr, last);
+    device const uchar *q0 = w + (ulong(r0) * blocks + p.weight_offset / 32) * 20;
+    device const uchar *q1 = w + (ulong(r1) * blocks + p.weight_offset / 32) * 20;
+#define DIRECT_Q4_DECLARE(M)                                                                       \
+    simdgroup_float8x8 c##M##_0(0.0f), c##M##_1(0.0f), c##M##_2(0.0f), c##M##_3(0.0f),             \
+        c##M##_4(0.0f), c##M##_5(0.0f), c##M##_6(0.0f), c##M##_7(0.0f), c##M##_8(0.0f);
+    DIRECT_Q4_DECLARE(0)
+    DIRECT_Q4_DECLARE(1)
+#undef DIRECT_Q4_DECLARE
+    device const float2 *arranged = (device const float2 *)x + frag0 * 32 + lane;
+    for (uint b = 0; b < blocks; ++b, q0 += 20, q1 += 20) {
+        float s0 = *((device const float *)q0), s1 = *((device const float *)q1);
+        device const uint *w0 = (device const uint *)(q0 + 4), *w1 = (device const uint *)(q1 + 4);
+        for (uint k = 0; k < 4; ++k) {
+            uint b0 = (w0[k] >> shift) & 255, b1 = (w1[k] >> shift) & 255, ks = b * 4 + k;
+            simdgroup_float8x8 a0, a1;
+            a0.thread_elements()[0] = float(int(b0 & 15) - 8) * s0;
+            a0.thread_elements()[1] = float(int(b0 >> 4) - 8) * s0;
+            a1.thread_elements()[0] = float(int(b1 & 15) - 8) * s1;
+            a1.thread_elements()[1] = float(int(b1 >> 4) - 8) * s1;
+#define DIRECT_Q4_PRODUCT(I)                                                                       \
+    if (NT > I) {                                                                                  \
+        float2 v = arranged[(ulong(ks) * p.input_stride + I) * 32];                                \
+        simdgroup_float8x8 bm;                                                                     \
+        bm.thread_elements()[0] = v.x;                                                             \
+        bm.thread_elements()[1] = v.y;                                                             \
+        simdgroup_multiply_accumulate(c0_##I, a0, bm, c0_##I);                                     \
+        simdgroup_multiply_accumulate(c1_##I, a1, bm, c1_##I);                                     \
+    }
+            DIRECT_Q4_PRODUCT(0)
+            DIRECT_Q4_PRODUCT(1)
+            DIRECT_Q4_PRODUCT(2)
+            DIRECT_Q4_PRODUCT(3)
+            DIRECT_Q4_PRODUCT(4)
+            DIRECT_Q4_PRODUCT(5)
+            DIRECT_Q4_PRODUCT(6)
+            DIRECT_Q4_PRODUCT(7)
+            DIRECT_Q4_PRODUCT(8)
+#undef DIRECT_Q4_PRODUCT
+        }
+    }
+#define DIRECT_Q4_STORE(M, I)                                                                      \
+    if (NT > I) {                                                                                  \
+        uint row = row0 + M * 8 + lr, token = (frag0 + I) * 8 + lc;                                \
+        if (row < p.rows && token < p.tokens)                                                      \
+            y[ulong(token) * p.output_stride + row] = c##M##_##I.thread_elements()[0];             \
+        if (row < p.rows && token + 1 < p.tokens)                                                  \
+            y[ulong(token + 1) * p.output_stride + row] = c##M##_##I.thread_elements()[1];         \
+    }
+#define DIRECT_Q4_STORE_ROW(M)                                                                     \
+    DIRECT_Q4_STORE(M, 0)                                                                          \
+    DIRECT_Q4_STORE(M, 1)                                                                          \
+    DIRECT_Q4_STORE(M, 2)                                                                          \
+    DIRECT_Q4_STORE(M, 3)                                                                          \
+    DIRECT_Q4_STORE(M, 4)                                                                          \
+    DIRECT_Q4_STORE(M, 5)                                                                          \
+    DIRECT_Q4_STORE(M, 6)                                                                          \
+    DIRECT_Q4_STORE(M, 7)                                                                          \
+    DIRECT_Q4_STORE(M, 8)
+    DIRECT_Q4_STORE_ROW(0)
+    DIRECT_Q4_STORE_ROW(1)
+#undef DIRECT_Q4_STORE_ROW
+#undef DIRECT_Q4_STORE
+}
+#define DIRECT_Q4(NAME, NT)                                                                        \
+    kernel void NAME(device const uchar *w [[buffer(0)]], device const float *x [[buffer(1)]],     \
+                     device float *y [[buffer(2)]], constant Linear &p [[buffer(3)]],              \
+                     uint3 group [[threadgroup_position_in_grid]],                                 \
+                     uint simd [[simdgroup_index_in_threadgroup]],                                 \
+                     uint lane [[thread_index_in_simdgroup]]) {                                    \
+        direct_q4<NT>(w, x, y, p, group, simd, lane);                                              \
+    }
+DIRECT_Q4(plamo_direct_q4_3, 3)
+DIRECT_Q4(plamo_direct_q4_4, 4)
+DIRECT_Q4(plamo_direct_q4_5, 5)
+DIRECT_Q4(plamo_direct_q4_6, 6)
+DIRECT_Q4(plamo_direct_q4_7, 7)
+DIRECT_Q4(plamo_direct_q4_8, 8)
+DIRECT_Q4(plamo_direct_q4_9, 9)
+
+// Chained proposal steps stay on the GPU. The greedy choice uses the CPU rule
+// (first maximal index, NaN invalid); the runner-up is the first maximal index
+// among the others. results: [0..16] tokens, [17..33] runner-ups, [34..50] margins.
+inline bool draft_better(float a, uint ia, float b, uint ib) {
+    return a > b || (a == b && ia < ib);
+}
+inline void draft_merge(thread float &v1, thread uint &i1, thread float &v2, thread uint &i2,
+                        float w1, uint j1, float w2, uint j2) {
+    if (draft_better(w1, j1, v1, i1)) {
+        if (draft_better(v1, i1, w2, j2)) {
+            v2 = v1;
+            i2 = i1;
+        } else {
+            v2 = w2;
+            i2 = j2;
+        }
+        v1 = w1;
+        i1 = j1;
+    } else if (draft_better(w1, j1, v2, i2)) {
+        v2 = w1;
+        i2 = j1;
+    }
+}
+inline void draft_reduce(thread float &v1, thread uint &i1, thread float &v2, thread uint &i2) {
+    for (ushort delta = 16; delta; delta >>= 1) {
+        float w1 = simd_shuffle_down(v1, delta), w2 = simd_shuffle_down(v2, delta);
+        uint j1 = simd_shuffle_down(i1, delta), j2 = simd_shuffle_down(i2, delta);
+        draft_merge(v1, i1, v2, i2, w1, j1, w2, j2);
+    }
+}
+kernel void plamo_draft_select(device const float *logits [[buffer(0)]],
+                               device uint *results [[buffer(1)]], constant uint2 &p [[buffer(2)]],
+                               uint row [[threadgroup_position_in_grid]],
+                               uint tid [[thread_index_in_threadgroup]],
+                               uint threads [[threads_per_threadgroup]],
+                               uint simd [[simdgroup_index_in_threadgroup]],
+                               uint lane [[thread_index_in_simdgroup]]) {
+    threadgroup float first[32], second[32];
+    threadgroup uint first_index[32], second_index[32], invalid;
+    if (!tid)
+        invalid = 0;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float v1 = -INFINITY, v2 = -INFINITY;
+    uint i1 = UINT_MAX, i2 = UINT_MAX;
+    bool nan = false;
+    for (uint i = tid; i < p.x; i += threads) {
+        float v = logits[ulong(row) * p.x + i];
+        if (isnan(v))
+            nan = true;
+        else
+            draft_merge(v1, i1, v2, i2, v, i, -INFINITY, UINT_MAX);
+    }
+    if (nan)
+        invalid = 1;
+    draft_reduce(v1, i1, v2, i2);
+    if (!lane) {
+        first[simd] = v1;
+        second[simd] = v2;
+        first_index[simd] = i1;
+        second_index[simd] = i2;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (simd)
+        return;
+    // Lanes beyond the simdgroup count hold the identity (-inf, no index).
+    bool used = lane < threads / 32;
+    v1 = used ? first[lane] : -INFINITY;
+    v2 = used ? second[lane] : -INFINITY;
+    i1 = used ? first_index[lane] : UINT_MAX;
+    i2 = used ? second_index[lane] : UINT_MAX;
+    draft_reduce(v1, i1, v2, i2);
+    if (!lane) {
+        uint slot = p.y + row;
+        results[slot] = invalid || i1 >= p.x ? UINT_MAX : i1;
+        results[17 + slot] = i2;
+        results[34 + slot] = as_type<uint>(v1 - v2);
+    }
+}
+// Expand the step's token from the original BF16 embedding rows.
+kernel void plamo_draft_embed(device const ushort *embedding [[buffer(0)]],
+                              device const uint *results [[buffer(1)]],
+                              device float *state [[buffer(2)]], constant uint2 &p [[buffer(3)]],
+                              uint gid [[thread_position_in_grid]]) {
+    uint token = results[p.y];
+    if (gid < p.x && token != UINT_MAX)
+        state[gid] = as_type<float>(uint(embedding[ulong(token) * p.x + gid]) << 16);
+}

@@ -19,7 +19,8 @@ struct plamo_draft {
     unsigned horizon, requested, proposed;
 };
 struct reply {
-    uint32_t ok, count, ids[PLAMO_DRAFT_MAX];
+    uint32_t ok, count, ids[PLAMO_DRAFT_MAX], alternatives[PLAMO_DRAFT_MAX];
+    float margins[PLAMO_DRAFT_MAX];
 };
 
 static int transfer(int fd, void *data, size_t bytes, int writing, int timeout_ms) {
@@ -160,7 +161,7 @@ struct plamo_draft *plamo_draft_open(void) {
     *d = (struct plamo_draft){.pid = pid, .in = input[1], .out = output[0], .horizon = 8};
     uint32_t ready[4];
     if (!transfer(d->out, ready, sizeof ready, 0, 30000) || ready[0] != PLAMO_DRAFT_MAGIC ||
-        ready[1] != 1 || ready[2] != 107520 || ready[3] != PLAMO_DRAFT_MAX) {
+        ready[1] != PLAMO_DRAFT_VERSION || ready[2] != 107520 || ready[3] != PLAMO_DRAFT_MAX) {
         plamo_draft_close(d);
         return NULL;
     }
@@ -177,6 +178,10 @@ int plamo_draft_reset(struct plamo_draft *d, const char *text, unsigned directio
     return ok;
 }
 unsigned plamo_draft_propose(struct plamo_draft *d, uint32_t first, unsigned limit, uint32_t *ids) {
+    return plamo_draft_propose_alternatives(d, first, limit, ids, NULL, NULL);
+}
+unsigned plamo_draft_propose_alternatives(struct plamo_draft *d, uint32_t first, unsigned limit,
+                                          uint32_t *ids, uint32_t *alternatives, float *margins) {
     struct reply reply;
     if (!d || !limit || limit > PLAMO_DRAFT_MAX)
         return 0;
@@ -191,11 +196,24 @@ unsigned plamo_draft_propose(struct plamo_draft *d, uint32_t first, unsigned lim
     d->requested = limit;
     d->proposed = reply.count;
     memcpy(ids, reply.ids, reply.count * sizeof *ids);
+    for (unsigned i = 0; i < reply.count; ++i) {
+        // An alternative is only a hint for the target; drop malformed ones.
+        int valid = i && reply.alternatives[i] < 107520 && reply.alternatives[i] != reply.ids[i];
+        if (alternatives)
+            alternatives[i] = valid ? reply.alternatives[i] : UINT32_MAX;
+        if (margins)
+            margins[i] = valid ? reply.margins[i] : 0.0f;
+    }
     return reply.count;
 }
-int plamo_draft_accept(struct plamo_draft *d, unsigned consumed) {
+static int accept(struct plamo_draft *d, unsigned consumed, uint32_t replacement) {
     struct reply reply;
-    int ok = exchange(d, 3, consumed, 0, NULL, &reply) && !reply.count;
+    if (replacement != UINT32_MAX &&
+        (replacement >= 107520 || !consumed || consumed >= d->proposed))
+        return 0;
+    int ok =
+        exchange(d, 3, consumed, replacement == UINT32_MAX ? 0 : replacement + 1, NULL, &reply) &&
+        !reply.count;
     if (ok) {
         // Grow beyond eight only after a complete, confident acceptance.
         // A first-token rejection recovers with short two/four-token blocks.
@@ -209,6 +227,12 @@ int plamo_draft_accept(struct plamo_draft *d, unsigned consumed) {
             d->horizon = PLAMO_DRAFT_MAX;
     }
     return ok;
+}
+int plamo_draft_accept(struct plamo_draft *d, unsigned consumed) {
+    return accept(d, consumed, UINT32_MAX);
+}
+int plamo_draft_accept_replacement(struct plamo_draft *d, unsigned consumed, uint32_t replacement) {
+    return d && replacement != UINT32_MAX && accept(d, consumed, replacement);
 }
 
 struct saved_layer {

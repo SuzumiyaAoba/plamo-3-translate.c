@@ -92,6 +92,9 @@ static const uint16_t *take(const uint16_t **p, size_t words) {
     *p += words;
     return out;
 }
+// The first layer is a tiny sliding window unless a test needs the masked
+// tree-verification attention, which requires every window to hold the batch.
+static size_t first_capacity = 3;
 static void initialize(struct fixture *f, const uint16_t *weights, size_t h, size_t n, size_t dim,
                        size_t capacity) {
     memset(f, 0, sizeof *f);
@@ -140,7 +143,7 @@ static void initialize(struct fixture *f, const uint16_t *weights, size_t h, siz
         qq->dim = dim;
         mix->weight = take(&weights, h * a);
         struct cache *c = mix->cache;
-        c->capacity = i ? capacity : 3;
+        c->capacity = i ? capacity : first_capacity;
         c->width = kh * dim;
         c->sliding = !i;
         c->k = buffer(f, c->capacity * c->width);
@@ -363,6 +366,108 @@ static void verification(struct plamo_metal *metal, struct fixture *a, struct fi
     puts(
         "Metal verification: PASS (1..16 FP32 candidates, unchanged canonical state before commit, sequential-prefix commit, sliding KV, rejected suffix, ordinary-decode recovery)");
 }
+/* A tree leaf replaces the chain token at its depth and attends only to the
+   chain before it. Leaves leave chain results unchanged, match verifying their
+   own path bit for bit, and commit like ordinary decoding of that path. */
+static void tree_verification(struct plamo_metal *metal, const uint16_t *weights, size_t h,
+                              size_t n, size_t dim, size_t capacity) {
+    if (dim != 128)
+        return;
+    struct fixture a, b;
+    first_capacity = capacity;
+    initialize(&a, weights, h, n, dim, capacity);
+    initialize(&b, weights, h, n, dim, capacity);
+    first_capacity = 3;
+    size_t v = a.model.vocab;
+    uint32_t prefix[] = {2, 5}, chain[] = {3, 10, 0, 7, 14, 4}, path[] = {3, 10, 12};
+    uint32_t tree[] = {3, 10, 0, 7, 14, 4, 12, 13}, depths[] = {0, 1, 2, 3, 4, 5, 2, 4};
+    uint32_t root_leaf[] = {0, 1, 0}, far_leaf[] = {0, 1, 2, 5}, next[8], gold[6], shorter[3];
+    float *initial = malloc(2 * h * 4), *logits = malloc(v * 4), *state = malloc(h * 4);
+    CHECK(initial && logits && state);
+    CHECK(plamo_metal_prefill(metal, &b.model, prefix, 2, initial) == 1);
+    CHECK(plamo_metal_verify(metal, &b.model, chain, 6, gold) == 1);
+    CHECK(plamo_metal_prefill(metal, &a.model, prefix, 2, initial) == 1);
+    uint64_t untouched = fixture_hash(&a);
+    CHECK(!plamo_metal_verify_tree(metal, &a.model, tree, root_leaf, 3, next) &&
+          !plamo_metal_verify_tree(metal, &a.model, tree, far_leaf, 4, next));
+    CHECK(plamo_metal_verify_tree(metal, &a.model, tree, depths, 8, next) == 1 &&
+          fixture_hash(&a) == untouched);
+    for (unsigned i = 0; i < 6; ++i)
+        CHECK(next[i] == gold[i]);
+    CHECK(!plamo_metal_commit(metal, &a.model, 6) && fixture_hash(&a) == untouched);
+    CHECK(plamo_metal_commit(metal, &a.model, 0) == 1 &&
+          plamo_metal_commit(metal, &a.model, 1) == 1);
+    CHECK(!plamo_metal_commit(metal, &a.model, 7) && plamo_metal_commit(metal, &a.model, 6) == 1);
+    CHECK(!plamo_metal_commit(metal, &a.model, 2) && !plamo_metal_commit(metal, &a.model, 3));
+    memcpy(logits, a.model.logits, v * 4);
+    memcpy(state, a.model.state, h * 4);
+    reset(&b);
+    CHECK(plamo_metal_prefill(metal, &b.model, prefix, 2, initial) == 1);
+    CHECK(plamo_metal_verify(metal, &b.model, path, 3, shorter) == 1 && shorter[2] == next[6] &&
+          shorter[0] == next[0] && shorter[1] == next[1]);
+    for (unsigned i = 0; i < 3; ++i)
+        CHECK(plamo_metal_commit(metal, &b.model, i) == 1);
+    CHECK(!memcmp(logits, b.model.logits, v * 4) && !memcmp(state, b.model.state, h * 4));
+    compare(&a, &b);
+    reset(&b);
+    CHECK(plamo_metal_prefill(metal, &b.model, prefix, 2, initial) == 1);
+    for (unsigned i = 0; i < 3; ++i)
+        CHECK(plamo_metal_forward(metal, &b.model, path[i]) == 1);
+    compare(&a, &b);
+    free(initial);
+    free(logits);
+    free(state);
+    destroy(&a);
+    destroy(&b);
+}
+
+/* Chained greedy steps match the same number of single-token forwards bit for
+   bit, including the runner-up and margin chosen by the CPU argmax rule. */
+static void chained_steps(struct plamo_metal *metal, const uint16_t *weights, size_t h, size_t n,
+                          size_t dim, size_t capacity) {
+    struct fixture a, b;
+    first_capacity = capacity;
+    initialize(&a, weights, h, n, dim, capacity);
+    initialize(&b, weights, h, n, dim, capacity);
+    first_capacity = 3;
+    size_t v = a.model.vocab;
+    uint32_t prefix[] = {2, 5}, ids[6], alternatives[6];
+    float margins[6], *initial = malloc(2 * h * 4), *logits = malloc(v * 4);
+    CHECK(initial && logits);
+    CHECK(plamo_metal_prefill(metal, &a.model, prefix, 2, initial) == 1);
+    uint64_t untouched = fixture_hash(&a);
+    CHECK(!plamo_metal_draft_steps(metal, &a.model, 3, (unsigned)capacity, ids, alternatives,
+                                   margins) &&
+          fixture_hash(&a) == untouched);
+    CHECK(plamo_metal_draft_steps(metal, &a.model, 3, 6, ids, alternatives, margins) == 1);
+    CHECK(plamo_metal_prefill(metal, &b.model, prefix, 2, initial) == 1);
+    uint32_t token = 3;
+    for (unsigned s = 0; s < 6; ++s) {
+        CHECK(plamo_metal_forward(metal, &b.model, token) == 1);
+        token = (uint32_t)plamo_argmax(b.model.logits, v);
+        memcpy(logits, b.model.logits, v * 4);
+        float best = logits[token];
+        logits[token] = -INFINITY;
+        uint32_t runner = (uint32_t)plamo_argmax(logits, v);
+        CHECK(ids[s] == token && alternatives[s] == runner && margins[s] == best - logits[runner]);
+    }
+    CHECK(!memcmp(a.model.logits, b.model.logits, v * 4) &&
+          !memcmp(a.model.state, b.model.state, h * 4));
+    compare(&a, &b);
+    destroy(&a);
+    // A chain that would fill the first layer's three-row sliding window is
+    // declined before any state, embedding or KV change.
+    initialize(&a, weights, h, n, dim, capacity);
+    CHECK(plamo_metal_prefill(metal, &a.model, prefix, 2, initial) == 1);
+    untouched = fixture_hash(&a);
+    CHECK(!plamo_metal_draft_steps(metal, &a.model, 3, 2, ids, alternatives, margins) &&
+          fixture_hash(&a) == untouched);
+    free(initial);
+    free(logits);
+    destroy(&a);
+    destroy(&b);
+}
+
 static int run(size_t h, size_t n, size_t dim, size_t capacity, int require_gpu, int textures) {
     size_t qh = 4, kh = 2,
            words =
@@ -443,6 +548,9 @@ static int run(size_t h, size_t n, size_t dim, size_t capacity, int require_gpu,
     CHECK(plamo_metal_prepare_model(metal, &a.model));
     prefills(metal, &a, &b, textures);
     verification(metal, &a, &b);
+    tree_verification(metal, base, h, n, dim, capacity);
+    if (capacity >= 8)
+        chained_steps(metal, base, h, n, dim, capacity);
     struct plamo_metal_info initial;
     plamo_metal_get_info(metal, &initial);
     CHECK((initial.packed_weight_bytes != 0) == (textures || n > 1000));
@@ -784,6 +892,6 @@ int main(int argc, char **argv) {
         return result == 77 ? 0 : result;
     mapped_graph();
     puts(
-        "Metal decode/prefill: PASS (single command, full CPU reference, all prompt states/logits/KV, sliding batches, existing prefixes, odd widths, growth past 128 rows, stale rotations, request reset, pressure fallback/recovery)");
+        "Metal decode/prefill: PASS (single command, full CPU reference, all prompt states/logits/KV, sliding batches, existing prefixes, odd widths, growth past 128 rows, stale rotations, request reset, pressure fallback/recovery, tree-leaf verification, chained greedy steps)");
     return 0;
 }

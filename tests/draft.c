@@ -20,7 +20,7 @@ static void append(struct cache *c, unsigned id) {
 }
 
 static int fake_peer(void) {
-    uint32_t ready[] = {PLAMO_DRAFT_MAGIC, 1, 107520, PLAMO_DRAFT_MAX};
+    uint32_t ready[] = {PLAMO_DRAFT_MAGIC, PLAMO_DRAFT_VERSION, 107520, PLAMO_DRAFT_MAX};
     if (getenv("_PLAMO_TEST_BAD_READY"))
         ready[0] = 0;
     assert(fwrite(ready, sizeof ready, 1, stdout) == 1 && !fflush(stdout));
@@ -31,7 +31,8 @@ static int fake_peer(void) {
         char text[16384];
         assert(fread(text, 1, header[3], stdin) == header[3]);
         struct {
-            uint32_t ok, count, ids[PLAMO_DRAFT_MAX];
+            uint32_t ok, count, ids[PLAMO_DRAFT_MAX], alternatives[PLAMO_DRAFT_MAX];
+            float margins[PLAMO_DRAFT_MAX];
         } reply = {.ok = 1};
         if (header[0] == 2) {
             if (++proposals == 2 && getenv("_PLAMO_TEST_FAIL_SECOND"))
@@ -42,11 +43,18 @@ static int fake_peer(void) {
             reply.count = header[2];
             if (header[1] == 43 && reply.count > 8)
                 reply.count = 8; // Low confidence.
-            for (unsigned i = 0; i < reply.count; ++i)
+            for (unsigned i = 0; i < reply.count; ++i) {
                 reply.ids[i] = header[1] + i;
+                reply.alternatives[i] = header[1] + 100 + i;
+                reply.margins[i] = (float)i;
+            }
+            if (reply.count > 2)
+                reply.alternatives[2] = reply.ids[2]; // Not an alternative.
             if (header[1] == 42)
                 ++reply.ids[0]; // Invalid known first token.
         }
+        if (header[0] == 3)
+            reply.ok = header[2] <= 107520; // Optional replacement token + 1.
         assert(fwrite(&reply, sizeof reply, 1, stdout) == 1 && !fflush(stdout));
     }
     return 0;
@@ -65,6 +73,17 @@ static void client(const char *executable) {
     assert(!plamo_draft_propose(d, 10, 0, ids));
     assert(plamo_draft_propose(d, 10, 4, ids) == 4 && ids[0] == 10 && ids[3] == 13);
     assert(plamo_draft_accept(d, 2));
+    // Second choices are hints: the known first token and duplicates have none.
+    uint32_t alternatives[PLAMO_DRAFT_MAX];
+    float margins[PLAMO_DRAFT_MAX];
+    assert(plamo_draft_propose_alternatives(d, 10, 4, ids, alternatives, margins) == 4 &&
+           alternatives[0] == UINT32_MAX && alternatives[1] == 111 &&
+           alternatives[2] == UINT32_MAX && alternatives[3] == 113 && margins[3] == 3.0f);
+    // A replacement keeps a nonempty proper prefix of the proposal.
+    assert(!plamo_draft_accept_replacement(d, 0, 111) &&
+           !plamo_draft_accept_replacement(d, 4, 111) &&
+           !plamo_draft_accept_replacement(d, 1, 107520));
+    assert(plamo_draft_accept_replacement(d, 1, 111));
     // Observe wire requests through the fake peer: complete acceptance grows
     // to sixteen, rejection shrinks, and a confidence stop caps the next round.
     assert(plamo_draft_reset(d, "adaptive", 2));
@@ -95,7 +114,7 @@ static void client(const char *executable) {
     assert(!plamo_draft_open());
     plamo_draft_close(NULL);
     puts(
-        "Draft client: PASS (process isolation, UTF-8 frames, proposals/acceptance, opt-out, invalid reply, EOF, bad handshake)");
+        "Draft client: PASS (process isolation, UTF-8 frames, proposals/alternatives/acceptance/replacement, opt-out, invalid reply, EOF, bad handshake)");
 }
 
 int main(int argc, char **argv) {

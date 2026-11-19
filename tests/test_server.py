@@ -80,9 +80,11 @@ class ServerTests(unittest.TestCase):
         executable = root / "fake-worker"
         executable.write_text(f"#!{sys.executable}\n" + FAKE_WORKER)
         executable.chmod(0o755)
-        self.worker = api.PersistentWorker(executable, root, startup_timeout=5)
+        # A freshly written fake worker can take about five seconds on its first
+        # execution while macOS assesses the new file, so allow more time.
+        self.worker = api.PersistentWorker(executable, root, startup_timeout=20)
         self.addCleanup(self.worker.close)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 20
         while self.worker.health()["status"] == "loading" and time.monotonic() < deadline:
             time.sleep(0.01)
         self.assertEqual(self.worker.health()["status"], "ready")
@@ -132,9 +134,9 @@ class ServerTests(unittest.TestCase):
 
     def test_compute_threads_are_forwarded_and_reported_in_health(self):
         root = Path(self.temp.name)
-        worker = api.PersistentWorker(root / "fake-worker", root, startup_timeout=5, threads=2)
+        worker = api.PersistentWorker(root / "fake-worker", root, startup_timeout=20, threads=2)
         self.addCleanup(worker.close)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 20
         while worker.health()["status"] == "loading" and time.monotonic() < deadline:
             time.sleep(0.01)
         self.assertEqual(worker.health()["status"], "ready")
@@ -148,10 +150,10 @@ class ServerTests(unittest.TestCase):
     def test_metal_selection_and_live_compute_counters(self):
         root = Path(self.temp.name)
         worker = api.PersistentWorker(
-            root / "fake-worker", root, startup_timeout=5, backend="metal"
+            root / "fake-worker", root, startup_timeout=20, backend="metal"
         )
         self.addCleanup(worker.close)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 20
         while worker.health()["status"] == "loading" and time.monotonic() < deadline:
             time.sleep(0.01)
         self.assertEqual(worker.health()["status"], "ready")
@@ -162,10 +164,10 @@ class ServerTests(unittest.TestCase):
     def test_health_reflects_unavailable_draft_after_request(self):
         root = Path(self.temp.name)
         worker = api.PersistentWorker(
-            root / "fake-worker", root, startup_timeout=5, backend="metal"
+            root / "fake-worker", root, startup_timeout=20, backend="metal"
         )
         self.addCleanup(worker.close)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 20
         while worker.health()["status"] == "loading" and time.monotonic() < deadline:
             time.sleep(0.01)
         self.assertTrue(worker.health()["speculative"]["enabled"])
@@ -330,10 +332,11 @@ class NativeWorkerArgumentsTests(unittest.TestCase):
             executable.write_text(f"#!{sys.executable}\n" + FAKE_WORKER)
             executable.chmod(0o755)
             worker = api.PersistentWorker(
-                executable, root, startup_timeout=5, model_profile=profile("31b")
+                executable, root, startup_timeout=20, model_profile=profile("31b")
             )
             try:
-                deadline = time.monotonic() + 5
+                # Outlast the startup timeout, so a stalled worker is reported failed.
+                deadline = time.monotonic() + 30
                 while worker.health()["status"] == "loading" and time.monotonic() < deadline:
                     time.sleep(0.01)
                 health = worker.health()

@@ -5,6 +5,7 @@
 #include "engine.h"
 #include "draft.h"
 #include <errno.h>
+#include <time.h>
 #include <inttypes.h>
 #include <math.h>
 #include <poll.h>
@@ -173,10 +174,11 @@ static void report_result(const struct plamo_result *r, struct plamo_engine *eng
     report_memory(engine);
     printf(",\"speculative\":{\"enabled\":%s,\"block_tokens\":%u,\"batches\":%" PRIu64
            ",\"consumed_tokens\":%" PRIu64 ",\"proposed_tokens\":%" PRIu64
-           ",\"accepted_tokens\":%" PRIu64 ",\"draft_seconds\":%.9f}",
+           ",\"accepted_tokens\":%" PRIu64 ",\"alternative_tokens\":%" PRIu64
+           ",\"alternative_accepted\":%" PRIu64 ",\"draft_seconds\":%.9f}",
            info.speculative_tokens ? "true" : "false", info.speculative_tokens,
            r->speculative_batches, r->speculative_tokens, r->proposed_tokens, r->accepted_tokens,
-           r->draft_seconds);
+           r->alternative_tokens, r->alternative_accepted, r->draft_seconds);
     printf(",\"compute\":");
     report_compute(engine);
     puts("}");
@@ -209,7 +211,9 @@ static int draft_peer(struct plamo_engine *engine) {
         return 64;
     setting = getenv("PLAMO_DRAFT_TRACE");
     int trace = setting && !strcmp(setting, "1");
-    uint32_t ready[] = {PLAMO_DRAFT_MAGIC, 1, 107520, PLAMO_DRAFT_MAX};
+    // Prepare chained GPU steps before the target times its first request.
+    plamo_engine_prepare_draft_steps(engine);
+    uint32_t ready[] = {PLAMO_DRAFT_MAGIC, PLAMO_DRAFT_VERSION, 107520, PLAMO_DRAFT_MAX};
     if (fwrite(ready, sizeof ready, 1, stdout) != 1 || fflush(stdout))
         return 1;
     struct plamo_draft_checkpoint *saved = NULL;
@@ -217,13 +221,26 @@ static int draft_peer(struct plamo_engine *engine) {
     uint32_t ids[PLAMO_DRAFT_MAX];
     for (;;) {
         uint32_t frame[4];
+        // Idle ticks keep this proposer's GPU memory resident between requests.
+        struct pollfd idle = {STDIN_FILENO, POLLIN, 0};
+        int waiting = poll(&idle, 1, 1000);
+        if (!waiting) {
+            plamo_engine_maintain_memory(engine);
+            plamo_engine_keep_resident(engine);
+            continue;
+        }
+        if (waiting < 0 && errno == EINTR)
+            continue;
+        if (waiting < 0)
+            return 1;
         int read = read_exact(frame, sizeof frame);
         if (!read)
             break;
         if (read != 1)
             return 1;
         struct {
-            uint32_t ok, count, ids[PLAMO_DRAFT_MAX];
+            uint32_t ok, count, ids[PLAMO_DRAFT_MAX], alternatives[PLAMO_DRAFT_MAX];
+            float margins[PLAMO_DRAFT_MAX];
         } reply = {0};
         char error[512];
         if (frame[0] == 1 && frame[1] <= 2 && !frame[2] && frame[3] <= 16384) {
@@ -233,12 +250,17 @@ static int draft_peer(struct plamo_engine *engine) {
             text[frame[3]] = 0;
             plamo_draft_checkpoint_free(saved);
             saved = NULL;
-            struct plamo_result result;
+            struct plamo_result result = {0};
             reply.ok = !memchr(text, 0, frame[3]) &&
                        plamo_engine_translate(engine, text, frame[1], 1, NULL, &result, error,
                                               sizeof error);
             if (trace)
-                fprintf(stderr, "draft reset direction=%u\n", frame[1]);
+                fprintf(stderr,
+                        "draft reset direction=%u prompt=%llu cached=%llu prefill=%.6f gpu=%.6f "
+                        "total=%.6f\n",
+                        frame[1], (unsigned long long)result.prompt_tokens,
+                        (unsigned long long)result.cached_prompt_tokens, result.prefill_seconds,
+                        result.prefill_gpu_seconds, result.total_seconds);
         } else if (frame[0] == 2 && frame[1] < plamo_model.vocab && frame[2] &&
                    frame[2] <= PLAMO_DRAFT_MAX && !frame[3] && !saved) {
             // Longer blocks pay off only when the proposer remains confident.
@@ -255,7 +277,41 @@ static int draft_peer(struct plamo_engine *engine) {
                 uint32_t alternatives[PLAMO_DRAFT_MAX] = {0};
                 float confidence = INFINITY;
                 int failed = 0;
-                while (proposed < frame[2] && ids[proposed - 1] != 1 && ids[proposed - 1] != 16) {
+                struct plamo_engine_info before_info;
+                struct timespec before_time;
+                if (trace) {
+                    plamo_engine_get_info(engine, &before_info);
+                    clock_gettime(CLOCK_MONOTONIC, &before_time);
+                }
+                // Steps that cannot stop on confidence run as one GPU command; a
+                // chain may forward past an EOS, which acceptance rolls back.
+                unsigned chain = frame[2] - 1;
+                if (proposal_margin && proposal_minimum < frame[2])
+                    chain = proposal_minimum - 1;
+                uint32_t chained[PLAMO_DRAFT_MAX], runners[PLAMO_DRAFT_MAX];
+                float gaps[PLAMO_DRAFT_MAX];
+                int steps = chain > 1 ? plamo_engine_draft_steps(engine, ids[0], chain, chained,
+                                                                 runners, gaps)
+                                      : 0;
+                if (steps < 0)
+                    failed = 1;
+                else if (steps) {
+                    processed = chain;
+                    for (unsigned s = 0;
+                         s < chain && ids[proposed - 1] != 1 && ids[proposed - 1] != 16; ++s) {
+                        if (chained[s] >= plamo_model.vocab) {
+                            failed = 1;
+                            break;
+                        }
+                        alternatives[proposed] = runners[s];
+                        margins[proposed] = gaps[s];
+                        if (gaps[s] < confidence)
+                            confidence = gaps[s];
+                        ids[proposed++] = chained[s];
+                    }
+                }
+                while (!failed && proposed < frame[2] && ids[proposed - 1] != 1 &&
+                       ids[proposed - 1] != 16) {
                     if (proposal_margin && proposed >= proposal_minimum &&
                         confidence < proposal_margin)
                         break;
@@ -269,7 +325,8 @@ static int draft_peer(struct plamo_engine *engine) {
                         failed = 1;
                         break;
                     }
-                    if (proposal_margin || trace) {
+                    // The second choice is also a free tree-leaf candidate for the target.
+                    {
                         float maximum = plamo_model.logits[id];
                         plamo_model.logits[id] = -INFINITY;
                         uint32_t alternative =
@@ -286,6 +343,16 @@ static int draft_peer(struct plamo_engine *engine) {
                     ids[proposed++] = id;
                 }
                 if (trace) {
+                    struct plamo_engine_info after_info;
+                    struct timespec after_time;
+                    plamo_engine_get_info(engine, &after_info);
+                    clock_gettime(CLOCK_MONOTONIC, &after_time);
+                    fprintf(stderr, "draft timing wall=%.6f gpu=%.6f buffers=%llu\n",
+                            (after_time.tv_sec - before_time.tv_sec) +
+                                (after_time.tv_nsec - before_time.tv_nsec) * 1e-9,
+                            after_info.gpu.gpu_seconds - before_info.gpu.gpu_seconds,
+                            (unsigned long long)(after_info.gpu.command_buffers -
+                                                 before_info.gpu.command_buffers));
                     fprintf(stderr, "draft proposal count=%u processed=%u", proposed, processed);
                     for (unsigned i = 0; i < proposed; ++i)
                         fprintf(stderr, " %u:%.4f/%u", ids[i], margins[i], alternatives[i]);
@@ -294,14 +361,24 @@ static int draft_peer(struct plamo_engine *engine) {
                 reply.ok = !failed;
                 reply.count = proposed;
                 memcpy(reply.ids, ids, proposed * sizeof *ids);
+                memcpy(reply.alternatives, alternatives, proposed * sizeof *alternatives);
+                memcpy(reply.margins, margins, proposed * sizeof *margins);
             }
-        } else if (frame[0] == 3 && saved && frame[1] <= proposed && !frame[2] && !frame[3]) {
+        } else if (frame[0] == 3 && saved && frame[1] <= proposed &&
+                   frame[2] <= plamo_model.vocab && !frame[3]) {
             unsigned accepted = frame[1];
             if (trace)
-                fprintf(stderr, "draft accept count=%u\n", accepted);
+                fprintf(stderr, "draft accept count=%u replacement=%u\n", accepted, frame[2]);
+            // A target-verified leaf replaced proposal 'accepted': keep the
+            // shared prefix, then append the target's token.
+            if (frame[2])
+                reply.ok =
+                    accepted && accepted <= processed &&
+                    (accepted == processed || plamo_draft_restore(saved, processed, accepted)) &&
+                    plamo_forward(&plamo_model, frame[2] - 1);
             // No rollback is needed when every forwarded token was consumed.
             // Preserve the already valid rotated-key cache in that case.
-            if (accepted == processed)
+            else if (accepted == processed)
                 reply.ok = 1;
             else if (accepted < processed)
                 reply.ok = plamo_draft_restore(saved, processed, accepted);
@@ -391,7 +468,9 @@ int main(int argc, char **argv) {
         setenv("_PLAMO_DRAFT_PEER", "1", 1);
     }
     struct plamo_engine_info info;
-    (void)pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+    // This thread mostly waits for GPU completions and the proposer's replies;
+    // interactive QoS keeps those wake-ups prompt when other work loads the CPU.
+    (void)pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
     struct plamo_engine *engine =
         plamo_engine_open(mode, tokenizer_only, threads, backend, &info, error, sizeof error);
     if (!engine) {
@@ -404,6 +483,8 @@ int main(int argc, char **argv) {
     }
     if (peer)
         return draft_peer(engine);
+    // Loading can push earlier allocations out; restore them before readiness.
+    plamo_engine_keep_resident(engine);
     plamo_engine_get_info(engine, &info);
     printf("{\"event\":\"ready\",\"protocol\":1,\"model\":");
     json_string(plamo_model_name);
@@ -429,6 +510,7 @@ int main(int argc, char **argv) {
         int ready = poll(&idle, 1, 1000);
         if (!ready) {
             plamo_engine_maintain_memory(engine);
+            plamo_engine_keep_resident(engine);
             continue;
         }
         if (ready < 0 && errno == EINTR)

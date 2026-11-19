@@ -550,6 +550,9 @@ void plamo_metal_encode_projection(struct plamo_metal *m, id<MTLComputeCommandEn
                                    const struct projection *p, id<MTLBuffer> x, uint64_t xs,
                                    id<MTLBuffer> y, uint64_t ys, uint64_t columns,
                                    uint64_t tokens) {
+    // Row tiles of one projection share an input, so its arranged copy is reused.
+    m->arranged_scope = 1;
+    m->arranged_valid = 0;
     for (size_t i = 0; i < p->count; ++i) {
         const struct tile *t = &p->tiles[i];
         plamo_metal_encode_linear(m, encoder, t->resource, t->offset, t->packed, x, xs, y,
@@ -566,6 +569,8 @@ void plamo_metal_encode_projection(struct plamo_metal *m, id<MTLComputeCommandEn
             m->info.cache.hit_bytes += bytes;
         }
     }
+    m->arranged_scope = 0;
+    m->arranged_valid = 0;
 }
 
 int plamo_metal_preload_schema(struct plamo_metal *m) {

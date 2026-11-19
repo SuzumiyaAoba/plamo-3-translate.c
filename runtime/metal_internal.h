@@ -73,7 +73,26 @@ struct plamo_metal {
     id<MTLComputePipelineState> prompt_matrix[2][PROMPT_TILE_COUNT], matrix_layout;
     unsigned prompt_matrix_ready;
     id<MTLComputePipelineState> q4_rows, draft_dot[2], draft_norm, draft_swiglu;
+    // Block-wise Q4 proposal projections: 16 lanes per row, or 4 for the head.
+    id<MTLComputePipelineState> draft_block[2];
     id<MTLComputePipelineState> full_texture[2];
+    // Direct-fragment texture projections: raw inputs for 1-8/9-16 tokens and
+    // arranged inputs for 3-9 token fragments per panel.
+    id<MTLComputePipelineState> direct_raw[2], direct_texture[7], arrange;
+    // Chained proposal steps: GPU greedy choice and embedding expansion.
+    id<MTLComputePipelineState> draft_select, draft_embed, draft_residual_norm, residual_norm;
+    // GPU greedy choices of the last verification batch (draft_select's layout).
+    id<MTLBuffer> verify_results;
+    unsigned verify_selected;
+    // Direct Q4 fragments for proposal prompts (3-9 token fragments per panel).
+    id<MTLComputePipelineState> direct_q4[7];
+    unsigned direct_q4_ready;
+    id<MTLBuffer> draft_results, draft_embedding;
+    const void *draft_embedding_source;
+    id<MTLBuffer> arranged;
+    id<MTLBuffer> arranged_input;
+    uint64_t arranged_key[3];
+    unsigned direct_ready, arranged_scope, arranged_valid;
     id<MTLBuffer> draft_normalized, draft_gate;
     id<MTLBuffer> split;
     unsigned split_k;
@@ -97,6 +116,10 @@ struct plamo_metal {
     unsigned residency_dirty, use_packing, cache_mappings, verify_encoding, draft_quantized,
         raw_mappings, raw_residency, fixed_bf16, texture_weights, private_weights;
     uint64_t verification_tokens, verification_index;
+    // Candidate positions relative to the verified prefix: a chain has depth i,
+    // a tree leaf repeats the depth of the chain token it replaces.
+    uint32_t verification_depths[PLAMO_VERIFY_MAX];
+    unsigned verification_tree, verification_leaf;
     uint64_t maximum, capacity, used, staging_bytes;
     uint64_t texture_heap_budget;
     unsigned texture_heap_attempted;

@@ -50,6 +50,29 @@ void plamo_metal_residency_commit(struct plamo_metal *m) {
 #endif
 }
 
+/* Under memory pressure macOS can compress or swap an idle process's GPU
+   allocations even while a residency set holds them; the next request then paid
+   seconds of page-ins before its first GPU command. Requesting residency again
+   on idle ticks keeps the retained weights hot (cheap while they are resident). */
+void plamo_metal_keep_resident(struct plamo_metal *m) {
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
+    // Streaming retains no weights; PLAMO_METAL_KEEP_RESIDENT=0 opts out.
+    static int disabled = -1;
+    if (disabled < 0) {
+        const char *setting = getenv("PLAMO_METAL_KEEP_RESIDENT");
+        disabled = setting && !strcmp(setting, "0");
+    }
+    if (@available(macOS 15.0, *)) {
+        if (m && m->residency && !disabled && m->config.memory != PLAMO_METAL_STREAM) {
+            plamo_metal_residency_commit(m);
+            [m->residency requestResidency];
+        }
+    }
+#else
+    (void)m;
+#endif
+}
+
 int plamo_metal_problem(struct plamo_metal *m, const char *message) {
     ++m->info.errors;
     snprintf(m->info.note, sizeof m->info.note, "%s", message);
@@ -83,19 +106,35 @@ void plamo_metal_encode_linear(struct plamo_metal *m, id<MTLComputeCommandEncode
                                NSUInteger output_offset, uint64_t ys, uint64_t rows,
                                uint64_t columns, uint64_t tokens) {
     struct {
-        uint32_t rows, columns, tokens, xs, ys, aligned_weights, weight_offset;
+        uint32_t rows, columns, tokens, xs, ys, aligned_weights, weight_offset, first_fragment;
     } params = {(uint32_t)rows,
                 (uint32_t)columns,
                 (uint32_t)tokens,
                 (uint32_t)xs,
                 (uint32_t)ys,
                 !(offset % 8),
-                packed ? (uint32_t)(offset / 2) : 0};
+                packed ? (uint32_t)(offset / 2) : 0,
+                0};
     if (m->draft_quantized && packed == 2 && tokens == 1 && !(columns % 32) &&
         !(params.weight_offset % 32) && !(xs % 4)) {
         id<MTLBuffer> half_input = x == m->normalized ? m->draft_normalized
                                    : x == m->gate     ? m->draft_gate
                                                       : nil;
+        // The head (107520 rows) is fastest with four lanes per row; layer
+        // projections with sixteen.
+        unsigned tall = rows >= 65536;
+        if (half_input && m->draft_block[tall]) {
+            unsigned row_tile = tall ? 32 : 8;
+            [encoder setComputePipelineState:m->draft_block[tall]];
+            [encoder setBuffer:(id<MTLBuffer>)w offset:0 atIndex:0];
+            [encoder setBuffer:half_input offset:0 atIndex:1];
+            [encoder setBuffer:y offset:output_offset atIndex:2];
+            [encoder setBytes:&params length:sizeof params atIndex:3];
+            [encoder dispatchThreadgroups:MTLSizeMake((rows + row_tile - 1) / row_tile, 1, 1)
+                    threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+            ++m->info.dispatches;
+            return;
+        }
         if (half_input) {
             unsigned wide = rows >= 4096 && columns <= 4096, row_tile = wide ? 16 : 4;
             [encoder setComputePipelineState:m->draft_dot[wide]];
@@ -131,6 +170,78 @@ void plamo_metal_encode_linear(struct plamo_metal *m, id<MTLComputeCommandEncode
     uint64_t tile_tokens = ((tokens + panels - 1) / panels + 7) / 8 * 8;
     int texture = packed == 3;
     unsigned direct_texture = texture && !offset && [(id<MTLTexture>)w width] * 4 == columns;
+    // Direct-fragment kernels read each lane's BF16 words from complete texture
+    // rows without staging. Up to 16 tokens read FP32 inputs in place; longer
+    // inputs are arranged once per projection. The 8-column steps keep the
+    // accumulation order of the prompt-matrix kernels.
+    // Proposal prompts read Q4 codes the same way (more than 16 tokens only).
+    int direct_q4 = packed == 2 && m->direct_q4_ready && tokens > 16 && !(columns % 32) &&
+                    !(params.weight_offset % 32) && rows;
+    if ((direct_texture && m->direct_ready && !(columns % 16) && rows && tokens && batched) ||
+        direct_q4) {
+        if (tokens <= 16) {
+            unsigned wide = tokens > 8, rows_per_group = wide ? 64 : 128;
+            [encoder setComputePipelineState:m->direct_raw[wide]];
+            [encoder setTexture:(id<MTLTexture>)w atIndex:0];
+            [encoder setBuffer:x offset:0 atIndex:1];
+            [encoder setBuffer:y offset:output_offset atIndex:2];
+            [encoder setBytes:&params length:sizeof params atIndex:3];
+            [encoder dispatchThreadgroups:MTLSizeMake((rows + rows_per_group - 1) / rows_per_group,
+                                                      1, 1)
+                    threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+            ++m->info.dispatches;
+            return;
+        }
+        // Use the fewest panels of at most nine fragments, then the narrowest width.
+        // A narrower final panel avoids padded fragments when it still has three.
+        uint64_t fragments = (tokens + 7) / 8, panels = (fragments + 8) / 9;
+        uint64_t width = (fragments + panels - 1) / panels, last = fragments - (panels - 1) * width;
+        int tail = panels > 1 && last != width && last >= 3;
+        uint64_t padded = tail ? fragments : panels * width;
+        if (columns * padded * 32 <= m->arranged.length) {
+            uint64_t key[3] = {tokens, columns, xs};
+            if (!m->arranged_valid || m->arranged_input != x ||
+                memcmp(key, m->arranged_key, sizeof key)) {
+                struct {
+                    uint32_t tokens, columns, input_stride, fragments;
+                } arrange = {(uint32_t)tokens, (uint32_t)columns, (uint32_t)xs, (uint32_t)padded};
+                uint64_t threads = columns / 8 * padded * 32;
+                [encoder setComputePipelineState:m->arrange];
+                [encoder setBuffer:x offset:0 atIndex:0];
+                [encoder setBuffer:m->arranged offset:0 atIndex:1];
+                [encoder setBytes:&arrange length:sizeof arrange atIndex:2];
+                [encoder dispatchThreadgroups:MTLSizeMake((threads + 255) / 256, 1, 1)
+                        threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
+                ++m->info.dispatches;
+                m->arranged_valid = m->arranged_scope;
+                m->arranged_input = x;
+                memcpy(m->arranged_key, key, sizeof key);
+            }
+            params.xs = (uint32_t)padded;
+            [encoder setComputePipelineState:direct_q4 ? m->direct_q4[width - 3]
+                                                       : m->direct_texture[width - 3]];
+            if (direct_q4)
+                [encoder setBuffer:(id<MTLBuffer>)w offset:0 atIndex:0];
+            else
+                [encoder setTexture:(id<MTLTexture>)w atIndex:0];
+            [encoder setBuffer:m->arranged offset:0 atIndex:1];
+            [encoder setBuffer:y offset:output_offset atIndex:2];
+            [encoder setBytes:&params length:sizeof params atIndex:3];
+            [encoder dispatchThreadgroups:MTLSizeMake((rows + 63) / 64, panels - tail, 1)
+                    threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+            ++m->info.dispatches;
+            if (tail) {
+                params.first_fragment = (uint32_t)((panels - 1) * width);
+                [encoder setComputePipelineState:direct_q4 ? m->direct_q4[last - 3]
+                                                           : m->direct_texture[last - 3]];
+                [encoder setBytes:&params length:sizeof params atIndex:3];
+                [encoder dispatchThreadgroups:MTLSizeMake((rows + 63) / 64, 1, 1)
+                        threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+                ++m->info.dispatches;
+            }
+            return;
+        }
+    }
     if (texture && tokens > 32 && m->prompt_matrix_ready && !(columns % 16) &&
         params.aligned_weights && !(xs % 4)) {
         unsigned tile = (tokens + 63) / 64 * 64 == (tokens + 31) / 32 * 32 ? PROMPT_64 : PROMPT_32;
@@ -517,6 +628,38 @@ struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *config, ch
         fn = [library newFunctionWithName:@"plamo_split_reduce"];
         m->split_reduce = [m->device newComputePipelineStateWithFunction:fn error:&failure];
         [fn release];
+        // Optional: chained greedy steps fall back to single steps without them.
+        fn = [library newFunctionWithName:@"plamo_draft_select"];
+        if (fn)
+            m->draft_select = [m->device newComputePipelineStateWithFunction:fn error:nil];
+        [fn release];
+        fn = [library newFunctionWithName:@"plamo_draft_embed"];
+        if (fn)
+            m->draft_embed = [m->device newComputePipelineStateWithFunction:fn error:nil];
+        [fn release];
+        // The selection kernel adapts to fewer threads, e.g. under shader validation.
+        if (m->draft_select && (m->draft_select.threadExecutionWidth != 32 ||
+                                m->draft_select.maxTotalThreadsPerThreadgroup < 32)) {
+            [m->draft_select release];
+            m->draft_select = nil;
+        }
+        if (m->draft_embed && m->draft_embed.maxTotalThreadsPerThreadgroup < 32) {
+            [m->draft_embed release];
+            m->draft_embed = nil;
+        }
+        // Optional fused residual + RMSNorm for prompt and verification batches.
+        // PLAMO_METAL_FUSE=0 keeps the separate kernels for comparison.
+        const char *fuse = getenv("PLAMO_METAL_FUSE");
+        fn =
+            fuse && !strcmp(fuse, "0") ? nil : [library newFunctionWithName:@"plamo_residual_norm"];
+        if (fn)
+            m->residual_norm = [m->device newComputePipelineStateWithFunction:fn error:nil];
+        [fn release];
+        if (m->residual_norm && (m->residual_norm.threadExecutionWidth != 32 ||
+                                 m->residual_norm.maxTotalThreadsPerThreadgroup < 128)) {
+            [m->residual_norm release];
+            m->residual_norm = nil;
+        }
         if (m->texture_weights) {
             fn = [library newFunctionWithName:@"plamo_matrix_layout"];
             m->matrix_layout = [m->device newComputePipelineStateWithFunction:fn error:&failure];
@@ -540,6 +683,64 @@ struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *config, ch
                     [descriptor release];
                     [fn release];
                 }
+            for (unsigned i = 0; i < 9; ++i) {
+                fn = [library
+                    newFunctionWithName:i == 0 ? @"plamo_direct_raw8"
+                                        : i == 1
+                                            ? @"plamo_direct_raw16"
+                                            : [NSString stringWithFormat:@"plamo_direct_texture%u",
+                                                                         i + 1]];
+                id<MTLComputePipelineState> pipeline = nil;
+                if (fn) {
+                    MTLComputePipelineDescriptor *descriptor =
+                        [[MTLComputePipelineDescriptor alloc] init];
+                    descriptor.computeFunction = fn;
+                    descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = YES;
+                    descriptor.maxTotalThreadsPerThreadgroup = 128;
+                    pipeline = [m->device newComputePipelineStateWithDescriptor:descriptor
+                                                                        options:0
+                                                                     reflection:nil
+                                                                          error:nil];
+                    [descriptor release];
+                    [fn release];
+                }
+                if (i < 2)
+                    m->direct_raw[i] = pipeline;
+                else
+                    m->direct_texture[i - 2] = pipeline;
+            }
+            fn = [library newFunctionWithName:@"plamo_arrange_fragments"];
+            if (fn)
+                m->arrange = [m->device newComputePipelineStateWithFunction:fn error:nil];
+            [fn release];
+        }
+        // Proposal prompts use direct Q4 fragments, which need the same layout
+        // probe and input arrangement as the texture kernels.
+        if (m->draft_quantized) {
+            fn = [library newFunctionWithName:@"plamo_matrix_layout"];
+            m->matrix_layout = [m->device newComputePipelineStateWithFunction:fn error:&failure];
+            [fn release];
+            fn = [library newFunctionWithName:@"plamo_arrange_fragments"];
+            if (fn)
+                m->arrange = [m->device newComputePipelineStateWithFunction:fn error:nil];
+            [fn release];
+            for (unsigned i = 0; i < 7; ++i) {
+                fn = [library
+                    newFunctionWithName:[NSString stringWithFormat:@"plamo_direct_q4_%u", i + 3]];
+                if (fn) {
+                    MTLComputePipelineDescriptor *descriptor =
+                        [[MTLComputePipelineDescriptor alloc] init];
+                    descriptor.computeFunction = fn;
+                    descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = YES;
+                    descriptor.maxTotalThreadsPerThreadgroup = 128;
+                    m->direct_q4[i] = [m->device newComputePipelineStateWithDescriptor:descriptor
+                                                                               options:0
+                                                                            reflection:nil
+                                                                                 error:nil];
+                    [descriptor release];
+                    [fn release];
+                }
+            }
         }
         for (unsigned n = 0; n < 2; ++n) {
             fn = [library newFunctionWithName:[NSString stringWithFormat:@"plamo_matmul%u_compact",
@@ -620,12 +821,44 @@ struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *config, ch
                 m->draft_dot[i] = [m->device newComputePipelineStateWithFunction:fn error:&failure];
                 [fn release];
             }
+            // PLAMO_DRAFT_BLOCK=0 keeps the previous chunk-wise kernels for comparison.
+            const char *block = getenv("PLAMO_DRAFT_BLOCK");
+            for (unsigned i = 0; i < 2 && !(block && !strcmp(block, "0")); ++i) {
+                fn = [library
+                    newFunctionWithName:i ? @"plamo_draft_block4" : @"plamo_draft_block16"];
+                if (fn)
+                    m->draft_block[i] = [m->device newComputePipelineStateWithFunction:fn
+                                                                                 error:nil];
+                [fn release];
+                // Fall back to the chunk-wise kernels if 128 threads cannot run.
+                if (m->draft_block[i] && (m->draft_block[i].threadExecutionWidth != 32 ||
+                                          m->draft_block[i].maxTotalThreadsPerThreadgroup < 128)) {
+                    [m->draft_block[i] release];
+                    m->draft_block[i] = nil;
+                }
+            }
             fn = [library newFunctionWithName:@"plamo_draft_norm"];
             m->draft_norm = [m->device newComputePipelineStateWithFunction:fn error:&failure];
             [fn release];
             fn = [library newFunctionWithName:@"plamo_draft_swiglu"];
             m->draft_swiglu = [m->device newComputePipelineStateWithFunction:fn error:&failure];
             [fn release];
+            // Optional fused residual + RMSNorm for single-token proposals.
+            // PLAMO_DRAFT_FUSE=0 keeps the separate kernels for comparison.
+            const char *fuse = getenv("PLAMO_DRAFT_FUSE");
+            fn = fuse && !strcmp(fuse, "0")
+                     ? nil
+                     : [library newFunctionWithName:@"plamo_draft_residual_norm"];
+            if (fn)
+                m->draft_residual_norm = [m->device newComputePipelineStateWithFunction:fn
+                                                                                  error:nil];
+            [fn release];
+            if (m->draft_residual_norm &&
+                (m->draft_residual_norm.threadExecutionWidth != 32 ||
+                 m->draft_residual_norm.maxTotalThreadsPerThreadgroup < 128)) {
+                [m->draft_residual_norm release];
+                m->draft_residual_norm = nil;
+            }
         }
         fn = [library newFunctionWithName:@"plamo_decode_keys"];
         m->decode_keys = [m->device newComputePipelineStateWithFunction:fn error:&failure];
@@ -690,14 +923,15 @@ struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *config, ch
                 [encoder endEncoding];
                 [command commit];
                 [command waitUntilCompleted];
-                int matches = command.status == MTLCommandBufferStatusCompleted;
+                int layout = command.status == MTLCommandBufferStatusCompleted;
                 const float *values = probe.contents;
-                for (unsigned lane = 0; matches && lane < 32; ++lane) {
+                for (unsigned lane = 0; layout && lane < 32; ++lane) {
                     unsigned row = ((lane & 6) >> 1) | ((lane & 16) >> 2);
                     unsigned col = ((lane & 1) << 1) | ((lane & 8) >> 1);
-                    matches = values[lane * 2] == row * 8 + col &&
-                              values[lane * 2 + 1] == row * 8 + col + 1;
+                    layout = values[lane * 2] == row * 8 + col &&
+                             values[lane * 2 + 1] == row * 8 + col + 1;
                 }
+                int matches = layout;
                 for (unsigned d = 0; d < 2; ++d)
                     for (unsigned n = 0; n < PROMPT_TILE_COUNT; ++n) {
                         id<MTLComputePipelineState> p = m->prompt_matrix[d][n];
@@ -707,6 +941,25 @@ struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *config, ch
                             p.staticThreadgroupMemoryLength <= m->device.maxThreadgroupMemoryLength;
                     }
                 m->prompt_matrix_ready = matches;
+                // The direct kernels use the same fragment layout. Setting
+                // PLAMO_METAL_DIRECT=0 keeps the previous texture kernels.
+                const char *direct = getenv("PLAMO_METAL_DIRECT");
+                int arranging = !(direct && !strcmp(direct, "0")) && m->arrange &&
+                                m->arrange.threadExecutionWidth == 32 &&
+                                m->arrange.maxTotalThreadsPerThreadgroup >= 256;
+                int ready = matches && arranging;
+                for (unsigned i = 0; i < 9; ++i) {
+                    id<MTLComputePipelineState> p =
+                        i < 2 ? m->direct_raw[i] : m->direct_texture[i - 2];
+                    ready = ready && p && p.threadExecutionWidth == 32 &&
+                            p.maxTotalThreadsPerThreadgroup >= 128;
+                }
+                m->direct_ready = ready;
+                int q4 = m->draft_quantized && layout && arranging;
+                for (unsigned i = 0; i < 7; ++i)
+                    q4 = q4 && m->direct_q4[i] && m->direct_q4[i].threadExecutionWidth == 32 &&
+                         m->direct_q4[i].maxTotalThreadsPerThreadgroup >= 128;
+                m->direct_q4_ready = q4;
             } else
                 [encoder endEncoding];
             [probe release];
@@ -862,6 +1115,14 @@ struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *config, ch
             snprintf(error, cap, "cannot allocate split-K workspace");
             goto fail;
         }
+        // Arranged FP32 prompt inputs: 16384 columns by 512 tokens (8B), or
+        // 6144 columns by about 1300 tokens for proposal prompts.
+        if (m->direct_ready || m->direct_q4_ready) {
+            m->arranged = [m->device newBufferWithLength:32 * MIB
+                                                 options:MTLResourceStorageModePrivate];
+            if (!m->arranged)
+                m->direct_ready = m->direct_q4_ready = 0;
+        }
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
         if (@available(macOS 15.0, *)) {
             MTLResidencySetDescriptor *descriptor = [[MTLResidencySetDescriptor alloc] init];
@@ -875,6 +1136,7 @@ struct plamo_metal *plamo_metal_open(const struct plamo_metal_config *config, ch
             }
             [m->queue addResidencySet:m->residency];
             plamo_metal_residency_add(m, m->staging);
+            plamo_metal_residency_add(m, m->arranged);
             plamo_metal_residency_commit(m);
             [m->residency requestResidency];
             m->info.residency_sets = 1;
@@ -1028,10 +1290,27 @@ void plamo_metal_close(struct plamo_metal *m) {
     [m->draft_dot[1] release];
     [m->draft_norm release];
     [m->draft_swiglu release];
+    [m->draft_residual_norm release];
+    [m->residual_norm release];
+    [m->verify_results release];
+    [m->draft_block[0] release];
+    [m->draft_block[1] release];
     [m->draft_normalized release];
     [m->draft_gate release];
     [m->full_texture[0] release];
     [m->full_texture[1] release];
+    for (unsigned i = 0; i < 2; ++i)
+        [m->direct_raw[i] release];
+    for (unsigned i = 0; i < 7; ++i) {
+        [m->direct_texture[i] release];
+        [m->direct_q4[i] release];
+    }
+    [m->arrange release];
+    [m->arranged release];
+    [m->draft_select release];
+    [m->draft_embed release];
+    [m->draft_results release];
+    [m->draft_embedding release];
     [m->queue release];
     [m->device release];
     plamo_disk_cache_close(m->disk_cache);

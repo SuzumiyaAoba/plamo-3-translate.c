@@ -8,6 +8,9 @@
 #include <mach/mach_vm.h>
 extern void plamo_rope_table(const float *, uint64_t, uint64_t, float *, float *, float);
 
+// Ordinary prompt batches bind a placeholder for the verification-only positions.
+static const uint32_t no_depths[1] = {0};
+
 static int prepare_graph(struct plamo_metal *m) {
     struct projection *projections[4 * 128 + 1];
     size_t count = 0;
@@ -309,6 +312,30 @@ int plamo_metal_prepare_model(struct plamo_metal *m, struct model *model) {
     }
 }
 
+/* Extend every layer's KV/rotation views and RoPE table ahead of requests. Views
+   otherwise grow on first use (128, 256, ... rows) inside a request. */
+int plamo_metal_prepare_rows(struct plamo_metal *m, struct model *model, uint64_t rows) {
+    if (m->config.memory == PLAMO_METAL_STREAM || !rows)
+        return 0;
+    @autoreleasepool {
+        if (!plamo_metal_prepare_model(m, model))
+            return 0;
+        for (uint64_t i = 0; i < model->count; ++i) {
+            const struct layer *l = model->layers[i];
+            const struct cache *c = l->mixer->cache;
+            struct decode_layer *d = &m->layers[i];
+            uint64_t n = rows < c->capacity ? rows : c->capacity;
+            if (!prepare_rope(m, &m->ropes[d->rope], n) ||
+                !cache_view(m, &d->k, c->k, n, c->width, c->capacity) ||
+                !cache_view(m, &d->v, c->v, n, c->width, c->capacity) ||
+                !cache_view(m, &d->rotated, l->mixer->rotation->out, n, c->width, c->capacity))
+                return 0;
+        }
+        plamo_metal_residency_commit(m);
+        return 1;
+    }
+}
+
 static void encode_norm(struct plamo_metal *m, id<MTLComputeCommandEncoder> e, NSUInteger offset,
                         uint64_t hidden, uint64_t tokens, NSUInteger state_offset) {
     uint32_t p[] = {(uint32_t)hidden, 0, (uint32_t)tokens};
@@ -355,10 +382,51 @@ static int compact_mlp_input(struct plamo_metal *m, uint64_t tokens, uint64_t in
 }
 
 /* Decode and prefill use the same FP32 MLP and the same dispatch sequence. */
-static void encode_layer_mlp(struct plamo_metal *m, id<MTLComputeCommandEncoder> e,
-                             const struct mlp *mlp, const struct decode_layer *d, uint64_t h,
-                             uint64_t tokens) {
-    encode_norm(m, e, d->mlp_pre, h, tokens, 0);
+/* A single-token proposal fuses each post-norm residual with the next RMSNorm:
+   state += norm(branch) * (post + offset), then normalized = norm(state). */
+static void encode_residual_norm(struct plamo_metal *m, id<MTLComputeCommandEncoder> e,
+                                 NSUInteger post, float offset, NSUInteger next, uint64_t hidden) {
+    struct {
+        uint32_t hidden;
+        float offset;
+    } p = {(uint32_t)hidden, offset};
+    [e setComputePipelineState:m->draft_residual_norm];
+    [e setBuffer:m->state offset:0 atIndex:0];
+    [e setBuffer:m->decode_norms offset:post atIndex:1];
+    [e setBuffer:m->branch offset:0 atIndex:2];
+    [e setBuffer:m->decode_norms offset:next atIndex:3];
+    [e setBuffer:m->normalized offset:0 atIndex:4];
+    [e setBuffer:m->draft_normalized offset:0 atIndex:5];
+    [e setBytes:&p length:sizeof p atIndex:6];
+    [e dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+    ++m->info.dispatches;
+}
+
+/* Prompt/verification rows: state += norm(branch) * (post + offset), then
+   normalized = norm(state) with the next weights, one group per row. */
+static void encode_residual_norm_rows(struct plamo_metal *m, id<MTLComputeCommandEncoder> e,
+                                      NSUInteger post, float offset, NSUInteger next,
+                                      uint64_t hidden, uint64_t rows) {
+    struct {
+        uint32_t hidden;
+        float offset;
+    } p = {(uint32_t)hidden, offset};
+    [e setComputePipelineState:m->residual_norm];
+    [e setBuffer:m->state offset:0 atIndex:0];
+    [e setBuffer:m->decode_norms offset:post atIndex:1];
+    [e setBuffer:m->branch offset:0 atIndex:2];
+    [e setBuffer:m->decode_norms offset:next atIndex:3];
+    [e setBuffer:m->normalized offset:0 atIndex:4];
+    [e setBytes:&p length:sizeof p atIndex:5];
+    [e dispatchThreadgroups:MTLSizeMake(rows, 1, 1) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+    ++m->info.dispatches;
+}
+
+static void encode_layer_mlp_parts(struct plamo_metal *m, id<MTLComputeCommandEncoder> e,
+                                   const struct mlp *mlp, const struct decode_layer *d, uint64_t h,
+                                   uint64_t tokens, int norm, int residual) {
+    if (norm)
+        encode_norm(m, e, d->mlp_pre, h, tokens, 0);
     plamo_metal_encode_projection(m, e, &d->gate, m->normalized, h, m->gate, 2 * mlp->intermediate,
                                   h, tokens);
     uint32_t params[] = {(uint32_t)h, (uint32_t)mlp->intermediate, (uint32_t)tokens};
@@ -379,7 +447,93 @@ static void encode_layer_mlp(struct plamo_metal *m, id<MTLComputeCommandEncoder>
     plamo_metal_encode_projection(m, e, &d->down, compact ? m->normalized : m->gate,
                                   (compact ? 1 : 2) * mlp->intermediate, m->branch, h,
                                   mlp->intermediate, tokens);
-    encode_residual(m, e, d->mlp_post, h, tokens, 1);
+    if (residual)
+        encode_residual(m, e, d->mlp_post, h, tokens, 1);
+}
+
+static void encode_layer_mlp(struct plamo_metal *m, id<MTLComputeCommandEncoder> e,
+                             const struct mlp *mlp, const struct decode_layer *d, uint64_t h,
+                             uint64_t tokens) {
+    encode_layer_mlp_parts(m, e, mlp, d, h, tokens, 1, 1);
+}
+
+/* One single-token decode step for every layer, the final norm and the head.
+   'ahead' counts earlier steps of the same command whose rows are not yet in the
+   CPU-side cache counts; such chains never reach a full sliding window. */
+static void encode_decode_step(struct plamo_metal *m, id<MTLComputeCommandEncoder> e,
+                               struct model *model, uint64_t ahead) {
+    uint64_t h = model->hidden;
+    // The Q4 proposer fuses each residual with the next RMSNorm (removing two
+    // serial single-group dispatches per layer); other models keep both kernels.
+    int fuse = m->draft_quantized && m->draft_residual_norm;
+    for (uint64_t i = 0; i < model->count; ++i) {
+        const struct layer *l = model->layers[i];
+        const struct qkv *q = l->mixer->qkv;
+        const struct cache *c = l->mixer->cache;
+        const struct rotation *r = l->mixer->rotation;
+        const struct mlp *mlp = l->mlp;
+        const struct decode_layer *d = &m->layers[i];
+        id<MTLBuffer> table = m->ropes[d->rope].buffer;
+        uint64_t count = c->count + ahead;
+        uint32_t p[] = {(uint32_t)q->qh, (uint32_t)q->kh, (uint32_t)q->dim,
+                        (uint32_t)(count < c->capacity ? count + 1 : c->capacity)};
+        uint32_t shift = count == c->capacity;
+        if (!fuse || !i)
+            encode_norm(m, e, d->pre, h, 1, 0);
+        plamo_metal_encode_projection(m, e, &d->qkv, m->normalized, h, m->qkv,
+                                      (q->qh + 2 * q->kh) * q->dim, h, 1);
+        // Keys are re-rotated only before the first step; later chained steps
+        // append rotated keys themselves and never fill a sliding window.
+        if (!ahead &&
+            (shift || r->processed_count != c->count || r->scale_bits != m->ropes[d->rope].scale)) {
+            [e setComputePipelineState:m->decode_keys];
+            [e setBuffer:d->k.buffer offset:d->k.offset atIndex:0];
+            [e setBuffer:d->v.buffer offset:d->v.offset atIndex:1];
+            [e setBuffer:d->rotated.buffer offset:d->rotated.offset atIndex:2];
+            [e setBuffer:table offset:0 atIndex:3];
+            [e setBytes:p length:sizeof p atIndex:4];
+            [e setBytes:&shift length:sizeof shift atIndex:5];
+            [e dispatchThreadgroups:MTLSizeMake((c->width / 2 + 127) / 128, 1, 1)
+                threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+            ++m->info.dispatches;
+        }
+        [e setComputePipelineState:m->decode_qkv];
+        [e setBuffer:m->qkv offset:0 atIndex:0];
+        [e setBuffer:m->decode_norms offset:d->qn atIndex:1];
+        [e setBuffer:m->decode_norms offset:d->kn atIndex:2];
+        [e setBuffer:d->k.buffer offset:d->k.offset atIndex:3];
+        [e setBuffer:d->v.buffer offset:d->v.offset atIndex:4];
+        [e setBuffer:d->rotated.buffer offset:d->rotated.offset atIndex:5];
+        [e setBuffer:table offset:0 atIndex:6];
+        [e setBytes:p length:sizeof p atIndex:7];
+        [e dispatchThreadgroups:MTLSizeMake(q->qh + q->kh, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+        [e setComputePipelineState:m->decode_attention];
+        [e setBuffer:m->qkv offset:0 atIndex:0];
+        [e setBuffer:d->rotated.buffer offset:d->rotated.offset atIndex:1];
+        [e setBuffer:d->v.buffer offset:d->v.offset atIndex:2];
+        [e setBuffer:m->attention offset:0 atIndex:3];
+        [e setBuffer:m->scores offset:0 atIndex:4];
+        [e setBytes:p length:sizeof p atIndex:5];
+        [e dispatchThreadgroups:MTLSizeMake(q->qh, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+        plamo_metal_encode_projection(m, e, &d->attention, m->attention, q->qh * q->dim, m->branch,
+                                      h, q->qh * q->dim, 1);
+        if (fuse) {
+            // The offsets equal plamo_decode_residual's and plamo_mlp_residual's.
+            encode_residual_norm(m, e, d->post, 0.2f, d->mlp_pre, h);
+            encode_layer_mlp_parts(m, e, mlp, d, h, 1, 0, 0);
+            encode_residual_norm(m, e, d->mlp_post, 0.08944271909999159f,
+                                 i + 1 < model->count ? m->layers[i + 1].pre : m->final_norm, h);
+        } else {
+            encode_residual(m, e, d->post, h, 1, 0);
+            encode_layer_mlp(m, e, mlp, d, h, 1);
+        }
+        m->info.dispatches += 2;
+    }
+    if (!fuse)
+        encode_norm(m, e, m->final_norm, h, 1, 0);
+    plamo_metal_encode_projection(m, e, &m->head, m->normalized, h, m->logits, model->vocab, h, 1);
 }
 
 int plamo_metal_forward(struct plamo_metal *m, struct model *model, uint64_t token) {
@@ -430,62 +584,7 @@ int plamo_metal_forward(struct plamo_metal *m, struct model *model, uint64_t tok
             plamo_metal_problem(m, "cannot create complete Metal decode command");
             return -1;
         }
-        for (uint64_t i = 0; i < model->count; ++i) {
-            const struct layer *l = model->layers[i];
-            const struct qkv *q = l->mixer->qkv;
-            const struct cache *c = l->mixer->cache;
-            const struct rotation *r = l->mixer->rotation;
-            const struct mlp *mlp = l->mlp;
-            const struct decode_layer *d = &m->layers[i];
-            id<MTLBuffer> table = m->ropes[d->rope].buffer;
-            uint32_t p[] = {(uint32_t)q->qh, (uint32_t)q->kh, (uint32_t)q->dim,
-                            (uint32_t)(c->count < c->capacity ? c->count + 1 : c->capacity)};
-            uint32_t shift = c->count == c->capacity;
-            encode_norm(m, e, d->pre, h, 1, 0);
-            plamo_metal_encode_projection(m, e, &d->qkv, m->normalized, h, m->qkv,
-                                          (q->qh + 2 * q->kh) * q->dim, h, 1);
-            if (shift || r->processed_count != c->count ||
-                r->scale_bits != m->ropes[d->rope].scale) {
-                [e setComputePipelineState:m->decode_keys];
-                [e setBuffer:d->k.buffer offset:d->k.offset atIndex:0];
-                [e setBuffer:d->v.buffer offset:d->v.offset atIndex:1];
-                [e setBuffer:d->rotated.buffer offset:d->rotated.offset atIndex:2];
-                [e setBuffer:table offset:0 atIndex:3];
-                [e setBytes:p length:sizeof p atIndex:4];
-                [e setBytes:&shift length:sizeof shift atIndex:5];
-                [e dispatchThreadgroups:MTLSizeMake((c->width / 2 + 127) / 128, 1, 1)
-                    threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
-                ++m->info.dispatches;
-            }
-            [e setComputePipelineState:m->decode_qkv];
-            [e setBuffer:m->qkv offset:0 atIndex:0];
-            [e setBuffer:m->decode_norms offset:d->qn atIndex:1];
-            [e setBuffer:m->decode_norms offset:d->kn atIndex:2];
-            [e setBuffer:d->k.buffer offset:d->k.offset atIndex:3];
-            [e setBuffer:d->v.buffer offset:d->v.offset atIndex:4];
-            [e setBuffer:d->rotated.buffer offset:d->rotated.offset atIndex:5];
-            [e setBuffer:table offset:0 atIndex:6];
-            [e setBytes:p length:sizeof p atIndex:7];
-            [e dispatchThreadgroups:MTLSizeMake(q->qh + q->kh, 1, 1)
-                threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
-            [e setComputePipelineState:m->decode_attention];
-            [e setBuffer:m->qkv offset:0 atIndex:0];
-            [e setBuffer:d->rotated.buffer offset:d->rotated.offset atIndex:1];
-            [e setBuffer:d->v.buffer offset:d->v.offset atIndex:2];
-            [e setBuffer:m->attention offset:0 atIndex:3];
-            [e setBuffer:m->scores offset:0 atIndex:4];
-            [e setBytes:p length:sizeof p atIndex:5];
-            [e dispatchThreadgroups:MTLSizeMake(q->qh, 1, 1)
-                threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
-            plamo_metal_encode_projection(m, e, &d->attention, m->attention, q->qh * q->dim,
-                                          m->branch, h, q->qh * q->dim, 1);
-            encode_residual(m, e, d->post, h, 1, 0);
-            encode_layer_mlp(m, e, mlp, d, h, 1);
-            m->info.dispatches += 2;
-        }
-        encode_norm(m, e, m->final_norm, h, 1, 0);
-        plamo_metal_encode_projection(m, e, &m->head, m->normalized, h, m->logits, model->vocab, h,
-                                      1);
+        encode_decode_step(m, e, model, 0);
         if (!plamo_metal_complete(m, command, e))
             return -1;
         memcpy(model->state, m->state.contents, (size_t)(h * 4));
@@ -500,6 +599,125 @@ int plamo_metal_forward(struct plamo_metal *m, struct model *model, uint64_t tok
         }
         ++m->info.fused_decodes;
         m->info.fused_mlps += model->count;
+        return 1;
+    }
+}
+
+// Chained proposals read a copy of the original BF16 embedding rows. A borrowed
+// view of the file mapping would page the table in during the first request.
+int plamo_metal_prepare_draft_steps(struct plamo_metal *m, struct model *model) {
+    if (!m->draft_select || !m->draft_embed || !model->embedding)
+        return 0;
+    @autoreleasepool {
+        if (!plamo_metal_ensure_buffer(m, &m->draft_results, 3 * 17 * 4))
+            return 0;
+        if (m->draft_embedding && m->draft_embedding_source == model->embedding)
+            return 1;
+        if (m->draft_embedding) {
+            plamo_metal_residency_remove(m, m->draft_embedding);
+            [m->draft_embedding release];
+        }
+        m->draft_embedding =
+            [m->device newBufferWithBytes:model->embedding
+                                   length:(NSUInteger)(model->vocab * model->hidden * 2)
+                                  options:MTLResourceStorageModeShared];
+        m->draft_embedding_source = m->draft_embedding ? model->embedding : NULL;
+        plamo_metal_residency_add(m, m->draft_embedding);
+        return m->draft_embedding != nil;
+    }
+}
+
+int plamo_metal_draft_steps(struct plamo_metal *m, struct model *model, uint32_t first,
+                            unsigned steps, uint32_t *ids, uint32_t *alternatives, float *margins) {
+    m->verification_tokens = 0;
+    if (!steps || steps > 16 || first >= model->vocab || !m->draft_select || !m->draft_embed ||
+        !ids || !alternatives || !margins || m->config.memory == PLAMO_METAL_STREAM)
+        return 0;
+    @autoreleasepool {
+        plamo_metal_maintain(m);
+        if (!plamo_metal_prepare_model(m, model))
+            return -1;
+        uint64_t h = model->hidden, scores = 0;
+        // Preflight the whole chain before any state, embedding or KV changes.
+        for (uint64_t i = 0; i < model->count; ++i) {
+            const struct layer *l = model->layers[i];
+            const struct qkv *q = l->mixer->qkv;
+            const struct cache *c = l->mixer->cache;
+            struct decode_layer *d = &m->layers[i];
+            // Chained steps only append rows; a sliding window must not fill.
+            // Contexts beyond a window keep the per-token path, which shifts it.
+            if (c->count + steps > c->capacity)
+                return 0;
+            if (!resolve_layer(m, l, d))
+                return 0;
+            uint64_t n = c->count + steps;
+            if (n * q->qh > scores)
+                scores = n * q->qh;
+            if (!prepare_rope(m, &m->ropes[d->rope], n) ||
+                !cache_view(m, &d->k, c->k, n, c->width, c->capacity) ||
+                !cache_view(m, &d->v, c->v, n, c->width, c->capacity) ||
+                !cache_view(m, &d->rotated, l->mixer->rotation->out, n, c->width, c->capacity))
+                return -1;
+        }
+        if (!plamo_metal_resolve_projection(m, model->head, model->vocab, h, &m->head, 1))
+            return 0;
+        if (!prepare_graph(m))
+            return 0;
+        if (!plamo_metal_prepare_draft_steps(m, model))
+            return 0;
+        if (!plamo_metal_ensure_buffer(m, &m->scores, scores * 4))
+            return -1;
+        uint32_t *results = m->draft_results.contents;
+        results[0] = first;
+        id<MTLCommandBuffer> command = [m->queue commandBuffer];
+        id<MTLComputeCommandEncoder> e = [command computeCommandEncoder];
+        if (!command || !e) {
+            plamo_metal_problem(m, "cannot create chained Metal proposal command");
+            return -1;
+        }
+        NSUInteger select_threads = m->draft_select.maxTotalThreadsPerThreadgroup / 32 * 32,
+                   embed_threads = m->draft_embed.maxTotalThreadsPerThreadgroup / 32 * 32;
+        if (select_threads > 1024)
+            select_threads = 1024;
+        if (embed_threads > 256)
+            embed_threads = 256;
+        for (unsigned s = 0; s < steps; ++s) {
+            uint32_t embed[] = {(uint32_t)h, s}, select[] = {(uint32_t)model->vocab, s + 1};
+            [e setComputePipelineState:m->draft_embed];
+            [e setBuffer:m->draft_embedding offset:0 atIndex:0];
+            [e setBuffer:m->draft_results offset:0 atIndex:1];
+            [e setBuffer:m->state offset:0 atIndex:2];
+            [e setBytes:embed length:sizeof embed atIndex:3];
+            [e dispatchThreadgroups:MTLSizeMake((h + embed_threads - 1) / embed_threads, 1, 1)
+                threadsPerThreadgroup:MTLSizeMake(embed_threads, 1, 1)];
+            encode_decode_step(m, e, model, s);
+            [e setComputePipelineState:m->draft_select];
+            [e setBuffer:m->logits offset:0 atIndex:0];
+            [e setBuffer:m->draft_results offset:0 atIndex:1];
+            [e setBytes:select length:sizeof select atIndex:2];
+            [e dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+                threadsPerThreadgroup:MTLSizeMake(select_threads, 1, 1)];
+            m->info.dispatches += 2;
+        }
+        if (!plamo_metal_complete(m, command, e))
+            return -1;
+        const float *gaps = (const float *)(results + 34);
+        for (unsigned s = 0; s < steps; ++s) {
+            ids[s] = results[s + 1];
+            alternatives[s] = results[17 + s + 1];
+            margins[s] = gaps[s + 1];
+        }
+        memcpy(model->state, m->state.contents, (size_t)(h * 4));
+        memcpy(model->normalized, m->normalized.contents, (size_t)(h * 4));
+        memcpy(model->logits, m->logits.contents, (size_t)(model->vocab * 4));
+        for (uint64_t i = 0; i < model->count; ++i) {
+            struct mixer *mix = model->layers[i]->mixer;
+            mix->cache->count += steps;
+            mix->rotation->processed_count = mix->cache->count;
+            mix->rotation->scale_bits = m->ropes[m->layers[i].rope].scale;
+        }
+        m->info.fused_decodes += steps;
+        m->info.fused_mlps += steps * model->count;
         return 1;
     }
 }
@@ -535,6 +753,7 @@ static id<MTLComputeCommandEncoder> final_prompt_row(struct plamo_metal *m,
 static int prefill_batch(struct plamo_metal *m, struct model *model, const uint32_t *ids,
                          uint64_t tokens, float *states, int verification) {
     m->verification_tokens = 0;
+    m->verify_selected = 0;
     if (!model || !ids || !tokens)
         return -1;
     if (m->config.memory == PLAMO_METAL_STREAM || tokens > 4096)
@@ -597,6 +816,14 @@ static int prefill_batch(struct plamo_metal *m, struct model *model, const uint3
             queries = 1;
         if (queries > tokens)
             queries = tokens;
+        // Tree leaves need the masked verification attention in every layer.
+        if (verification && m->verification_tree)
+            for (uint64_t i = 0; i < model->count; ++i) {
+                const struct qkv *q = model->layers[i]->mixer->qkv;
+                const struct cache *c = model->layers[i]->mixer->cache;
+                if (q->dim != 128 || c->count + tokens > c->capacity || queries != tokens)
+                    return 0;
+            }
         uint64_t normalized = h;
         if (compact_mlp_input(m, tokens, gate / 2) && gate / 2 > normalized)
             normalized = gate / 2;
@@ -608,7 +835,9 @@ static int prefill_batch(struct plamo_metal *m, struct model *model, const uint3
             !plamo_metal_ensure_buffer(m, &m->attention, tokens * attention * 4) ||
             !plamo_metal_ensure_buffer(m, &m->scores, queries * score_row * 4) ||
             !plamo_metal_ensure_buffer(m, &m->logits,
-                                       (verification ? tokens : 1) * model->vocab * 4))
+                                       (verification ? tokens : 1) * model->vocab * 4) ||
+            (verification && m->draft_select &&
+             !plamo_metal_ensure_buffer(m, &m->verify_results, 3 * 17 * 4)))
             return -1;
         uint32_t *state = m->state.contents;
         // Independent rows may fault on different file pages. Read bounded
@@ -631,6 +860,9 @@ static int prefill_batch(struct plamo_metal *m, struct model *model, const uint3
         }
         uint64_t final_state = tokens - 1;
         m->verify_encoding = verification;
+        // Fuse each post-norm residual with the next RMSNorm (not for the Q4
+        // proposer, whose single rows also need half-precision copies).
+        int fuse = m->residual_norm && !m->draft_quantized, pre_ready = 0, final_ready = 0;
         for (uint64_t i = 0; i < model->count; ++i) {
             const struct layer *l = model->layers[i];
             const struct qkv *q = l->mixer->qkv;
@@ -648,7 +880,9 @@ static int prefill_batch(struct plamo_metal *m, struct model *model, const uint3
                             (uint32_t)c->capacity,
                             0,
                             (uint32_t)verification};
-            encode_norm(m, e, d->pre, h, tokens, 0);
+            if (!pre_ready)
+                encode_norm(m, e, d->pre, h, tokens, 0);
+            pre_ready = 0;
             plamo_metal_encode_projection(m, e, &d->qkv, m->normalized, h, qkv_buffer,
                                           (q->qh + 2 * q->kh) * q->dim, h, tokens);
             if (c->count && (verification || c->count + tokens <= c->capacity) &&
@@ -677,6 +911,10 @@ static int prefill_batch(struct plamo_metal *m, struct model *model, const uint3
                  atIndex:5];
             [e setBuffer:table offset:0 atIndex:6];
             [e setBytes:p length:sizeof p atIndex:7];
+            if (!tiled_qkv)
+                [e setBytes:verification ? m->verification_depths : no_depths
+                     length:verification ? tokens * 4 : sizeof no_depths
+                    atIndex:8];
             [e dispatchThreadgroups:MTLSizeMake(tiled_qkv ? (q->qh + q->kh + 7) / 8 : q->qh + q->kh,
                                                 tokens, 1)
                 threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
@@ -706,6 +944,7 @@ static int prefill_batch(struct plamo_metal *m, struct model *model, const uint3
                 [e setBuffer:d->proposal_rotated offset:0 atIndex:2];
                 [e setBuffer:m->scores offset:0 atIndex:3];
                 [e setBytes:p length:sizeof p atIndex:4];
+                [e setBytes:m->verification_depths length:tokens * 4 atIndex:5];
                 [e dispatchThreadgroups:MTLSizeMake(q->qh, (tokens + 3) / 4,
                                                     (c->count + tokens + 15) / 16)
                     threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
@@ -720,6 +959,7 @@ static int prefill_batch(struct plamo_metal *m, struct model *model, const uint3
                 [e setBuffer:m->scores offset:0 atIndex:2];
                 [e setBuffer:m->attention offset:0 atIndex:3];
                 [e setBytes:p length:sizeof p atIndex:4];
+                [e setBytes:m->verification_depths length:tokens * 4 atIndex:5];
                 [e dispatchThreadgroups:MTLSizeMake(q->qh, (tokens + 1) / 2, 2)
                     threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
                 m->info.dispatches += 3;
@@ -770,13 +1010,48 @@ static int prefill_batch(struct plamo_metal *m, struct model *model, const uint3
             }
             plamo_metal_encode_projection(m, e, &d->attention, m->attention, q->qh * q->dim,
                                           m->branch, h, q->qh * q->dim, outputs);
-            encode_residual(m, e, d->post, h, outputs, 0);
-            encode_layer_mlp(m, e, mlp, d, h, outputs);
+            if (fuse) {
+                // The offsets equal plamo_decode_residual's and plamo_mlp_residual's.
+                encode_residual_norm_rows(m, e, d->post, 0.2f, d->mlp_pre, h, outputs);
+                encode_layer_mlp_parts(m, e, mlp, d, h, outputs, 0, 0);
+                if (i + 1 < model->count) {
+                    encode_residual_norm_rows(m, e, d->mlp_post, 0.08944271909999159f,
+                                              m->layers[i + 1].pre, h, outputs);
+                    pre_ready = 1;
+                } else if (verification || outputs == 1) {
+                    // The head reads exactly these rows from offset zero.
+                    encode_residual_norm_rows(m, e, d->mlp_post, 0.08944271909999159f,
+                                              m->final_norm, h, outputs);
+                    final_ready = 1;
+                } else
+                    encode_residual(m, e, d->mlp_post, h, outputs, 1);
+            } else {
+                encode_residual(m, e, d->post, h, outputs, 0);
+                encode_layer_mlp(m, e, mlp, d, h, outputs);
+            }
         }
-        encode_norm(m, e, m->final_norm, h, verification ? tokens : 1,
-                    verification ? 0 : final_state * h * 4);
+        if (!final_ready)
+            encode_norm(m, e, m->final_norm, h, verification ? tokens : 1,
+                        verification ? 0 : final_state * h * 4);
         plamo_metal_encode_projection(m, e, &m->head, m->normalized, h, m->logits, model->vocab, h,
                                       verification ? tokens : 1);
+        // Verification also picks each row's greedy token on the GPU (the CPU
+        // argmax rule: first maximal index; NaN rows are invalid).
+        m->verify_selected = 0;
+        if (verification && m->draft_select && m->verify_results) {
+            NSUInteger threads = m->draft_select.maxTotalThreadsPerThreadgroup / 32 * 32;
+            if (threads > 1024)
+                threads = 1024;
+            uint32_t select[] = {(uint32_t)model->vocab, 0};
+            [e setComputePipelineState:m->draft_select];
+            [e setBuffer:m->logits offset:0 atIndex:0];
+            [e setBuffer:m->verify_results offset:0 atIndex:1];
+            [e setBytes:select length:sizeof select atIndex:2];
+            [e dispatchThreadgroups:MTLSizeMake(tokens, 1, 1)
+                threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
+            ++m->info.dispatches;
+            m->verify_selected = 1;
+        }
         int completed = plamo_metal_complete(m, command, e);
         m->verify_encoding = 0;
         if (!completed)
@@ -812,26 +1087,50 @@ int plamo_metal_prefill(struct plamo_metal *m, struct model *model, const uint32
     return prefill_batch(m, model, ids, tokens, states, 0);
 }
 
-int plamo_metal_verify(struct plamo_metal *m, struct model *model, const uint32_t *ids,
-                       uint64_t tokens, uint32_t *next) {
+int plamo_metal_verify_tree(struct plamo_metal *m, struct model *model, const uint32_t *ids,
+                            const uint32_t *depths, uint64_t tokens, uint32_t *next) {
     if (!next || !tokens || tokens > PLAMO_VERIFY_MAX)
         return 0;
+    m->verification_tokens = 0;
+    m->verification_tree = 0;
+    m->verification_leaf = 0;
+    uint64_t chain = tokens;
+    for (uint64_t i = 0; i < tokens; ++i) {
+        uint32_t depth = depths ? depths[i] : (uint32_t)i;
+        if (depth != i && chain == tokens)
+            chain = i;
+        // Leaves follow the whole chain and replace one of its later tokens.
+        if (i >= chain && (depth == i || !depth || depth >= chain))
+            return 0;
+        m->verification_depths[i] = depth;
+    }
+    m->verification_tree = chain < tokens;
     int result = prefill_batch(m, model, ids, tokens, NULL, 1);
     if (result == 1) {
         const float *logits = m->logits.contents;
+        const uint32_t *chosen = m->verify_selected ? m->verify_results.contents : NULL;
         for (uint64_t i = 0; i < tokens; ++i)
-            next[i] = (uint32_t)plamo_argmax(logits + i * model->vocab, model->vocab);
+            next[i] = chosen ? chosen[i]
+                             : (uint32_t)plamo_argmax(logits + i * model->vocab, model->vocab);
     }
     return result;
 }
 
+int plamo_metal_verify(struct plamo_metal *m, struct model *model, const uint32_t *ids,
+                       uint64_t tokens, uint32_t *next) {
+    return plamo_metal_verify_tree(m, model, ids, NULL, tokens, next);
+}
+
 int plamo_metal_commit(struct plamo_metal *m, struct model *model, uint64_t index) {
-    if (m->model != model || index != m->verification_index || index >= m->verification_tokens)
+    // The next committed candidate must sit at the next position. A leaf ends
+    // the path because later chain candidates were computed after its sibling.
+    if (m->model != model || index >= m->verification_tokens || m->verification_leaf ||
+        m->verification_depths[index] != m->verification_index)
         return 0;
     int full = 0;
     for (uint64_t i = 0; i < model->count; ++i) {
         const struct cache *c = model->layers[i]->mixer->cache;
-        uint64_t count = m->layers[i].verify_prefix + index;
+        uint64_t count = m->layers[i].verify_prefix + m->verification_index;
         if (count > c->capacity)
             count = c->capacity;
         if (c->count != count)
@@ -907,6 +1206,7 @@ int plamo_metal_commit(struct plamo_metal *m, struct model *model, uint64_t inde
                (size_t)model->hidden * 4);
         memcpy(model->logits, (const float *)m->logits.contents + index * model->vocab,
                (size_t)model->vocab * 4);
+        m->verification_leaf = index != m->verification_index;
         ++m->verification_index;
         ++m->info.committed_tokens;
         return 1;
